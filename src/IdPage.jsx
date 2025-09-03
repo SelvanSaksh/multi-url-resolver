@@ -1,3 +1,20 @@
+    // Helper: calculate distance between two lat/lng in meters
+    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+        const R = 6371000; // Radius of the earth in meters
+        const dLat = deg2rad(lat2-lat1);
+        const dLon = deg2rad(lon2-lon1);
+        const a = 
+            Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+            Math.sin(dLon/2) * Math.sin(dLon/2)
+            ;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const d = R * c; // Distance in meters
+        return d;
+    }
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import barcodeIcon from './assets/barcode.svg';
@@ -10,28 +27,72 @@ const isMobile = () => {
 };
 
 const IdPage = () => {
+    // Session expired and warning state
+    const [sessionExpired, setSessionExpired] = useState(false);
+    const [showWarning, setShowWarning] = useState(false);
     const { id } = useParams();
     const queryString = window.location.search;
     const queryParams = new URLSearchParams(queryString);
-    const currentLocation = queryParams.get('curlocation');
-    console.log('Current Location:', currentLocation);
+    const [currentLocation, setCurrentLocation] = useState(queryParams.get('curlocation') || '');
+   
+    useEffect(() => {
+        // Detect refresh using Navigation Timing API (modern browsers)
+        if (performance.getEntriesByType('navigation')[0]?.type === 'reload') {
+            setShowWarning(true);
+            setSessionExpired(true);
+            return;
+        }
+        // Fallback for older browsers
+        if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) {
+            setShowWarning(true);
+            setSessionExpired(true);
+            return;
+        }
+        // Session flag
+        if (!sessionStorage.getItem('visited')) {
+            sessionStorage.setItem('visited', 'true');
+        } else {
+            setShowWarning(true);
+            setSessionExpired(true);
+            return;
+        }
+        if (!currentLocation || !userLatLng) {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    setUserLatLng({ lat: latitude, lng: longitude });
+                    if (!currentLocation) {
+                        try {
+                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                            const data = await res.json();
+                            const city = data.address.city || data.address.town || data.address.village || '';
+                            const state = data.address.state || '';
+                            const country = data.address.country || '';
+                            setCurrentLocation(city || state || country);
+                        } catch (err) {
+                            setCurrentLocation(`${latitude},${longitude}`);
+                        }
+                    }
+                });
+            }
+        }
+    }, []);
 
     const [mobile, setMobile] = useState(true);
     const [urlData, setUrlData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [displayUrl, setDisplayUrl] = useState('');
+    const [displayTitle, setDisplayTitle] = useState('');
 
-    // Function to get current time in HH:MM format
+    const [userLatLng, setUserLatLng] = useState(null);
     const getCurrentTime = () => {
         const now = new Date();
-        return now.toTimeString().slice(0, 5); // Format: HH:MM
+        return now.toTimeString().slice(0, 5);
     };
 
-    // Function to check if current time is between start and end time
     const isTimeInRange = (startTime, endTime) => {
         const currentTime = getCurrentTime();
         
-        // Convert times to minutes for easier comparison
         const timeToMinutes = (time) => {
             const [hours, minutes] = time.split(':').map(Number);
             return hours * 60 + minutes;
@@ -41,7 +102,6 @@ const IdPage = () => {
         const startMinutes = timeToMinutes(startTime);
         const endMinutes = timeToMinutes(endTime);
 
-        // Handle cases where end time is next day
         if (endMinutes < startMinutes) {
             return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
         }
@@ -49,56 +109,111 @@ const IdPage = () => {
         return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     };
 
-    // Function to find matching URL based on conditions
-    const findMatchingUrl = (jsonData, currentLocation) => {
-        if (!jsonData?.data || !Array.isArray(jsonData.data)) {
-            return jsonData?.defaultURL || '';
+    const findMatchingUrlAndTitle = (jsonData, currentLocation, userLatLng, count) => {
+        if (!jsonData?.dynamicData || !Array.isArray(jsonData.dynamicData)) {
+            return {
+                url: jsonData?.defaultUrl || '',
+                title: jsonData?.title || '',
+            };
         }
 
-        // Check each data item for matches
-        for (const item of jsonData.data) {
+        for (const item of jsonData.dynamicData) {
+            if (item.type === 'Number of scans' && typeof count === 'number') {
+                const details = item.data;
+                const scanLimit = parseInt(details.scanNumber, 10);
+                if (!isNaN(scanLimit)) {
+                    if (count <= scanLimit) {
+                        return {
+                            url: details.url,
+                            title: item.title || jsonData?.title || '',
+                        };
+                    } else {
+                        return {
+                            url: jsonData?.defaultUrl || '',
+                            title: jsonData?.title || '',
+                        };
+                    }
+                }
+            }
             if (item.type === 'Location' && currentLocation) {
-                const details = item.details;
-                // Check if current location matches any location field
+                const details = item.data;
+                // ...existing code...
                 const locationMatch = 
                     currentLocation.toLowerCase() === details.city?.toLowerCase() ||
                     currentLocation.toLowerCase() === details.state?.toLowerCase() ||
                     currentLocation.toLowerCase() === details.country?.toLowerCase() ||
                     currentLocation.toLowerCase().includes(details.city?.toLowerCase()) ||
                     currentLocation.toLowerCase().includes(details.state?.toLowerCase());
-                
                 if (locationMatch && details.url) {
-                    return details.url;
+                    return {
+                        url: details.url,
+                        title: item.title || jsonData?.title || '',
+                    };
                 }
             }
-            
             if (item.type === 'Time') {
-                const details = item.details;
+                const details = item.data;
                 if (details.startTime && details.endTime) {
                     if (isTimeInRange(details.startTime, details.endTime)) {
-                        return details.url || jsonData?.defaultURL || '';
+                        return {
+                            url: details.url || jsonData?.defaultUrl || '',
+                            title: item.title || jsonData?.title || '',
+                        };
+                    }
+                }
+            }
+            if (item.type === 'Geo-fencing' && userLatLng) {
+                const details = item.data;
+                const apiLat = parseFloat(details.latitude);
+                const apiLng = parseFloat(details.longitude);
+                const radius = parseFloat(details.radius);
+                const url = details.url;
+                const userLat = userLatLng.lat;
+                const userLng = userLatLng.lng;
+                if (!isNaN(apiLat) && !isNaN(apiLng) && !isNaN(radius) && userLat && userLng) {
+                    const distance = getDistanceFromLatLonInMeters(userLat, userLng, apiLat, apiLng);
+                    if (distance <= radius) {
+                        return {
+                            url: url,
+                            title: item.title || jsonData?.title || '',
+                        };
                     }
                 }
             }
         }
-
-        // Return default URL if no matches found
-        return jsonData?.defaultURL || '';
+        // Return default URL and title if no matches found
+        return {
+            url: jsonData?.defaultUrl || '',
+            title: jsonData?.title || '',
+        };
     };
 
     useEffect(() => {
         setMobile(isMobile());
+        if (sessionExpired) return;
+        if (!id || !currentLocation || !userLatLng) return;
         const fetchUrlData = async () => {
             try {
                 // Call the barcode API
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
                 setUrlData(data);
-                
-                // Determine which URL to display
-                const matchedUrl = findMatchingUrl(data.jsonData, currentLocation);
-                setDisplayUrl(matchedUrl);
-                
+                // Determine which URL and title to display
+                if (data.jsonData) {
+                    const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
+                    const redirectUrl = match.url;
+                    if (redirectUrl) {
+                        // Ensure protocol
+                        const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
+                        window.location.replace(finalUrl);
+                        return;
+                    }
+                    setDisplayUrl(match.url);
+                    setDisplayTitle(match.title);
+                } else {
+                    setDisplayUrl('');
+                    setDisplayTitle('');
+                }
                 setLoading(false);
             } catch (error) {
                 console.error('Error fetching URL data:', error);
@@ -106,8 +221,19 @@ const IdPage = () => {
             }
         };
         fetchUrlData();
-    }, [id, currentLocation]);
+    }, [id, currentLocation, userLatLng, sessionExpired]);
 
+    if (sessionExpired) {
+        return (
+            <div style={{ maxWidth: 500, margin: '0 auto', textAlign: 'center', padding: '2rem' }}>
+                {showWarning && <div style={{ color: 'red', marginBottom: '1rem' }}>Warning: You refreshed the page.</div>}
+                <h2>Session expired</h2>
+                <button style={{ marginTop: '1rem', padding: '0.5rem 1rem', background: '#1976d2', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }} onClick={() => window.location.href = '/'}>
+                    Create Page
+                </button>
+            </div>
+        );
+    }
     if (loading) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
@@ -116,7 +242,6 @@ const IdPage = () => {
             </div>
         );
     }
-
     if (!urlData) {
         return (
             <div style={mobile ? mobileStyles.errorContainer : desktopStyles.errorContainer}>
@@ -131,7 +256,7 @@ const IdPage = () => {
             <div style={mobileStyles.container}>
                 <header style={mobileStyles.header}>
                     <img src={barcodeIcon} alt="barcode scanner" style={mobileStyles.icon} />
-                    qr.sakksh.com
+                    qr.gs1r.ai
                 </header>
 
                 <div style={mobileStyles.content}>
@@ -143,7 +268,13 @@ const IdPage = () => {
                         </div>
                     )}
 
-                    {/* Display the matched URL */}
+                    {/* Display the matched title and URL */}
+                    {displayTitle && (
+                        <div style={mobileStyles.card}>
+                            <div style={mobileStyles.cardHeader}>Title</div>
+                            <div style={mobileStyles.cardContent}>{displayTitle}</div>
+                        </div>
+                    )}
                     {displayUrl && (
                         <div style={mobileStyles.card}>
                             <div style={mobileStyles.cardHeader}>URL</div>
@@ -160,8 +291,8 @@ const IdPage = () => {
 
                     <div style={mobileStyles.statsContainer}>
                         <div style={mobileStyles.statItem}>
-                            <div style={mobileStyles.statValue}>{urlData.status || 'Active'}</div>
-                            <div style={mobileStyles.statLabel}>Status</div>
+                            <div style={mobileStyles.statValue}>{currentLocation || 'Unknown'}</div>
+                            <div style={mobileStyles.statLabel}>Current Location</div>
                         </div>
                         <div style={mobileStyles.statItem}>
                             <div style={mobileStyles.statValue}>
@@ -195,19 +326,20 @@ const IdPage = () => {
 
                 <header style={desktopStyles.header}>
                     <img src={barcodeIcon} alt="barcode scanner" style={desktopStyles.icon} />
-                    qr.sakksh.com
+                    qr.gs1r.ai
                 </header>
 
                 <div style={desktopStyles.content}>
                     <h2 style={desktopStyles.title}>Scanned Information</h2>
 
-                    {currentLocation && (
-                        <div style={{ color: '#1976d2', fontWeight: 'bold', marginBottom: 16, textAlign: 'center' }}>
-                            Current Location: {currentLocation}
+
+                    {/* Display the matched title and URL */}
+                    {displayTitle && (
+                        <div style={desktopStyles.card}>
+                            <div style={desktopStyles.cardHeader}>Title</div>
+                            <div style={desktopStyles.cardContent}>{displayTitle}</div>
                         </div>
                     )}
-
-                    {/* Display the matched URL */}
                     {displayUrl && (
                         <div style={desktopStyles.card}>
                             <div style={desktopStyles.cardHeader}>URL</div>
@@ -224,8 +356,8 @@ const IdPage = () => {
 
                     <div style={desktopStyles.statsContainer}>
                         <div style={desktopStyles.statItem}>
-                            <div style={desktopStyles.statValue}>{urlData.status || 'Active'}</div>
-                            <div style={desktopStyles.statLabel}>Status</div>
+                            <div style={desktopStyles.statValue}>{currentLocation || 'Unknown'}</div>
+                            <div style={desktopStyles.statLabel}>Current Location</div>
                         </div>
                         <div style={desktopStyles.statItem}>
                             <div style={desktopStyles.statValue}>
