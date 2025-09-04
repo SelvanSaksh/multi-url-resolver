@@ -110,16 +110,24 @@ const IdPage = () => {
     };
 
     const findMatchingUrlAndTitle = (jsonData, currentLocation, userLatLng, count) => {
-        if (!jsonData?.dynamicData || !Array.isArray(jsonData.dynamicData)) {
+        // Support both dynamicData and data arrays
+        const dynamicArr = Array.isArray(jsonData?.dynamicData)
+            ? jsonData.dynamicData
+            : Array.isArray(jsonData?.data)
+                ? jsonData.data
+                : [];
+
+        if (!dynamicArr.length) {
             return {
-                url: jsonData?.defaultUrl || '',
+                url: jsonData?.defaultUrl || jsonData?.defaultURL || '',
                 title: jsonData?.title || '',
             };
         }
 
-        for (const item of jsonData.dynamicData) {
+        for (const item of dynamicArr) {
+            // Support both item.data and item.details
+            const details = item.data || item.details || {};
             if (item.type === 'Number of scans' && typeof count === 'number') {
-                const details = item.data;
                 const scanLimit = parseInt(details.scanNumber, 10);
                 if (!isNaN(scanLimit)) {
                     if (count <= scanLimit) {
@@ -129,21 +137,17 @@ const IdPage = () => {
                         };
                     } else {
                         return {
-                            url: jsonData?.defaultUrl || '',
+                            url: jsonData?.defaultUrl || jsonData?.defaultURL || '',
                             title: jsonData?.title || '',
                         };
                     }
                 }
             }
             if (item.type === 'Location' && currentLocation) {
-                const details = item.data;
-                // ...existing code...
                 const locationMatch = 
-                    currentLocation.toLowerCase() === details.city?.toLowerCase() ||
-                    currentLocation.toLowerCase() === details.state?.toLowerCase() ||
-                    currentLocation.toLowerCase() === details.country?.toLowerCase() ||
-                    currentLocation.toLowerCase().includes(details.city?.toLowerCase()) ||
-                    currentLocation.toLowerCase().includes(details.state?.toLowerCase());
+                    (details.city && currentLocation.toLowerCase().includes(details.city.toLowerCase())) ||
+                    (details.state && currentLocation.toLowerCase().includes(details.state.toLowerCase())) ||
+                    (details.country && currentLocation.toLowerCase().includes(details.country.toLowerCase()));
                 if (locationMatch && details.url) {
                     return {
                         url: details.url,
@@ -152,18 +156,16 @@ const IdPage = () => {
                 }
             }
             if (item.type === 'Time') {
-                const details = item.data;
                 if (details.startTime && details.endTime) {
                     if (isTimeInRange(details.startTime, details.endTime)) {
                         return {
-                            url: details.url || jsonData?.defaultUrl || '',
+                            url: details.url || jsonData?.defaultUrl || jsonData?.defaultURL || '',
                             title: item.title || jsonData?.title || '',
                         };
                     }
                 }
             }
             if (item.type === 'Geo-fencing' && userLatLng) {
-                const details = item.data;
                 const apiLat = parseFloat(details.latitude);
                 const apiLng = parseFloat(details.longitude);
                 const radius = parseFloat(details.radius);
@@ -183,7 +185,7 @@ const IdPage = () => {
         }
         // Return default URL and title if no matches found
         return {
-            url: jsonData?.defaultUrl || '',
+            url: jsonData?.defaultUrl || jsonData?.defaultURL || '',
             title: jsonData?.title || '',
         };
     };
@@ -201,15 +203,13 @@ const IdPage = () => {
                 // Determine which URL and title to display
                 if (data.jsonData) {
                     const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
-                    const redirectUrl = match.url;
-                    if (redirectUrl) {
-                        // Ensure protocol
-                        const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
+                    if (match.url) {
+                        const finalUrl = match.url.startsWith('http') ? match.url : `https://${match.url}`;
                         window.location.replace(finalUrl);
                         return;
                     }
-                    setDisplayUrl(match.url);
-                    setDisplayTitle(match.title);
+                    setDisplayUrl('');
+                    setDisplayTitle('');
                 } else {
                     setDisplayUrl('');
                     setDisplayTitle('');
