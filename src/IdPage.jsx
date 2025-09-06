@@ -146,12 +146,18 @@ const IdPage = () => {
                 }
             }
             if (item.type === 'Location' && currentLocation) {
-                // Support matching city, state, country, and state_district
+                // Helper to remove emoji and extra spaces
+                const clean = str => str ? str.replace(/[^\p{L}\p{N} ]+/gu, '').trim().toLowerCase() : '';
+                const currentLocClean = clean(currentLocation);
+                const cityClean = clean(details.city);
+                const stateClean = clean(details.state);
+                const countryClean = clean(details.country);
+                const stateDistrictClean = clean(details.state_district);
                 const locationMatch =
-                    (details.city && currentLocation.toLowerCase().includes(details.city.toLowerCase())) ||
-                    (details.state && currentLocation.toLowerCase().includes(details.state.toLowerCase())) ||
-                    (details.country && currentLocation.toLowerCase().includes(details.country.toLowerCase())) ||
-                    (details.state_district && currentLocation.toLowerCase().includes(details.state_district.toLowerCase()));
+                    (cityClean && currentLocClean.includes(cityClean)) ||
+                    (stateClean && currentLocClean.includes(stateClean)) ||
+                    (countryClean && currentLocClean.includes(countryClean)) ||
+                    (stateDistrictClean && currentLocClean.includes(stateDistrictClean));
                 if (locationMatch && details.url) {
                     return {
                         url: details.url,
