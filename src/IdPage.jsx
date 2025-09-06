@@ -215,7 +215,7 @@ const IdPage = () => {
                 if (/android/i.test(userAgent)) {
                     deviceType = 'Android';
                 } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-                    deviceType = 'iOS';
+                    deviceType = 'iPhone';
                 }
 
                 // Device-based redirect
