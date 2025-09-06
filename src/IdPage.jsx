@@ -220,7 +220,8 @@ const IdPage = () => {
     useEffect(() => {
         setMobile(isMobile());
         if (sessionExpired) return;
-        if (!id || !currentLocation || !userLatLng) return;
+        if (!id) return;
+        
         const fetchUrlData = async () => {
             try {
                 // Call the barcode API
@@ -228,7 +229,7 @@ const IdPage = () => {
                 const data = response.data;
                 setUrlData(data);
                 console.log(data, "Data");
-
+                
                 // Device detection
                 const userAgent = navigator.userAgent || navigator.vendor || window.opera;
                 let deviceType = '';
@@ -237,6 +238,7 @@ const IdPage = () => {
                 } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
                     deviceType = 'iPhone';
                 }
+                console.log('Detected deviceType:', deviceType);
 
                 // Device-based redirect
                 let redirectUrl = '';
@@ -252,14 +254,16 @@ const IdPage = () => {
                 if (!redirectUrl) {
                     redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
                 }
+                console.log('Chosen redirectUrl:', redirectUrl);
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
+                    console.log('Redirecting to:', finalUrl);
                     window.location.replace(finalUrl);
                     return;
                 }
-                setDisplayUrl('');
-                setDisplayTitle('');
+                // If no redirect, show error and clear loading
                 setLoading(false);
+                alert('No valid URL found for this QR code.');
             } catch (error) {
                 console.error('Error fetching URL data:', error);
                 setLoading(false);
@@ -267,7 +271,7 @@ const IdPage = () => {
             }
         };
         fetchUrlData();
-    }, [id, currentLocation, userLatLng, sessionExpired]);
+    }, [id, sessionExpired]);
 
     if (sessionExpired) {
         return (
