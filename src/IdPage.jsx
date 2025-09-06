@@ -63,7 +63,7 @@ const IdPage = () => {
                     setUserLatLng({ lat: latitude, lng: longitude });
                     if (!currentLocation) {
                         try {
-                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=11.292358&lon=79.044241`);
+                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                             const data = await res.json();
                             const locationName = data.address.state_district || data.address.state || '';
                             setCurrentLocation(locationName);
@@ -214,7 +214,7 @@ const IdPage = () => {
                     const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
                     if (match.url) {
                         const finalUrl = match.url.startsWith('http') ? match.url : `https://${match.url}`;
-                        console.log('Matched URL:', finalUrl);
+                        window.location.replace(finalUrl);
                         return;
                     }
                     setDisplayUrl('');
