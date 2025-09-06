@@ -68,11 +68,12 @@ const IdPage = () => {
                             const city = data.address.city || data.address.town || data.address.village || '';
                             const state = data.address.state || '';
                             const country = data.address.country || '';
-                            setCurrentLocation(city || state || country);
-                            console.log(data.address.city || data.address.town || data.address.village || '');
-                            
+                            const locationName = city || state || country;
+                            setCurrentLocation(locationName);
+                            console.log('Detected Location:', locationName);
                         } catch (err) {
                             setCurrentLocation(`${latitude},${longitude}`);
+                            console.log('Detected Location:', `${latitude},${longitude}`);
                         }
                     }
                 });
@@ -216,7 +217,7 @@ const IdPage = () => {
                     const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
                     if (match.url) {
                         const finalUrl = match.url.startsWith('http') ? match.url : `https://${match.url}`;
-                        window.location.replace(finalUrl);
+                        console.log('Matched URL:', finalUrl);
                         return;
                     }
                     setDisplayUrl('');
