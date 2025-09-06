@@ -56,36 +56,46 @@ const IdPage = () => {
             setSessionExpired(true);
             return;
         }
-        if (!currentLocation || !userLatLng) {
-            if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(
-                    async (position) => {
-                        const { latitude, longitude } = position.coords;
-                        setUserLatLng({ lat: latitude, lng: longitude });
-                        if (!currentLocation) {
-                            try {
-                                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                                const data = await res.json();
-                                const locationName = data.address.state_district || data.address.state || '';
-                                setCurrentLocation(locationName);
-                                console.log('Detected Location:', locationName);
-                            } catch (err) {
-                                setCurrentLocation(`${latitude},${longitude}`);
-                                console.log('Detected Location:', `${latitude},${longitude}`);
+        // Only fetch geolocation if there is a Location type in the response data
+        const checkAndFetchLocation = async () => {
+            try {
+                const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
+                const data = response.data;
+                const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
+                if (hasLocationType && (!currentLocation || !userLatLng)) {
+                    if (navigator.geolocation) {
+                        navigator.geolocation.getCurrentPosition(
+                            async (position) => {
+                                const { latitude, longitude } = position.coords;
+                                setUserLatLng({ lat: latitude, lng: longitude });
+                                if (!currentLocation) {
+                                    try {
+                                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                                        const locData = await res.json();
+                                        const locationName = locData.address.state_district || locData.address.state || '';
+                                        setCurrentLocation(locationName);
+                                        console.log('Detected Location:', locationName);
+                                    } catch (err) {
+                                        setCurrentLocation(`${latitude},${longitude}`);
+                                        console.log('Detected Location:', `${latitude},${longitude}`);
+                                    }
+                                }
+                            },
+                            async (error) => {
+                                try {
+                                    const { logErrorToTetr } = await import('./api');
+                                    logErrorToTetr(error, { source: 'geolocation', id });
+                                } catch (e) {}
+                                alert('Location error: ' + (error?.message || 'Unknown location error.'));
                             }
-                        }
-                    },
-                    async (error) => {
-                        // Log geolocation error to Tetr
-                        try {
-                            const { logErrorToTetr } = await import('./api');
-                            logErrorToTetr(error, { source: 'geolocation', id });
-                        } catch (e) {}
-                        alert('Location error: ' + (error?.message || 'Unknown location error.'));
+                        );
                     }
-                );
+                }
+            } catch (error) {
+                // fail silently, location is not critical for non-location types
             }
-        }
+        };
+        checkAndFetchLocation();
     }, []);
 
     const [mobile, setMobile] = useState(true);
