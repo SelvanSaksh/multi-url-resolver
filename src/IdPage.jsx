@@ -210,7 +210,7 @@ const IdPage = () => {
                     const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
                     if (match.url) {
                         const finalUrl = match.url.startsWith('http') ? match.url : `https://${match.url}`;
-                        // window.location.replace(finalUrl);
+                        window.location.replace(finalUrl);
                         return;
                     }
                     setDisplayUrl('');
