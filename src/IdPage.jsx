@@ -66,11 +66,8 @@ const IdPage = () => {
                             const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=11.292358&lon=79.044241`);
                             const data = await res.json();
                             const city = data.address.city || data.address.town || data.address.village || '';
-                            const state = data.address.state || '';
-                            const country = data.address.country || '';
-                            const locationName = city || state || country;
-                            setCurrentLocation(locationName);
-                            console.log('Detected Location:', locationName);
+                            setCurrentLocation(city);
+                            console.log('Detected City:', city);
                         } catch (err) {
                             setCurrentLocation(`${latitude},${longitude}`);
                             console.log('Detected Location:', `${latitude},${longitude}`);
