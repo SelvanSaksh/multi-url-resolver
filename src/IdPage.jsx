@@ -207,22 +207,38 @@ const IdPage = () => {
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
                 setUrlData(data);
-                console.log(data,"Data");
-                
-                // Determine which URL and title to display
-                if (data.jsonData) {
-                    const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
-                    if (match.url) {
-                        const finalUrl = match.url.startsWith('http') ? match.url : `https://${match.url}`;
-                        window.location.replace(finalUrl);
-                        return;
-                    }
-                    setDisplayUrl('');
-                    setDisplayTitle('');
-                } else {
-                    setDisplayUrl('');
-                    setDisplayTitle('');
+                console.log(data, "Data");
+
+                // Device detection
+                const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+                let deviceType = '';
+                if (/android/i.test(userAgent)) {
+                    deviceType = 'Android';
+                } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+                    deviceType = 'iOS';
                 }
+
+                // Device-based redirect
+                let redirectUrl = '';
+                if (data.jsonData && Array.isArray(data.jsonData.data)) {
+                    const deviceObj = data.jsonData.data.find(
+                        item => item.type === 'Device' && item.details && item.details.deviceType === deviceType
+                    );
+                    if (deviceObj && deviceObj.details && deviceObj.details.url) {
+                        redirectUrl = deviceObj.details.url;
+                    }
+                }
+                // Fallback to defaultURL if no device match
+                if (!redirectUrl) {
+                    redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
+                }
+                if (redirectUrl) {
+                    const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
+                    window.location.replace(finalUrl);
+                    return;
+                }
+                setDisplayUrl('');
+                setDisplayTitle('');
                 setLoading(false);
             } catch (error) {
                 console.error('Error fetching URL data:', error);
