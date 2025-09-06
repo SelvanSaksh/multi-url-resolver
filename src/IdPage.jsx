@@ -63,12 +63,14 @@ const IdPage = () => {
                     setUserLatLng({ lat: latitude, lng: longitude });
                     if (!currentLocation) {
                         try {
-                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=11.292358&lon=79.044241`);
                             const data = await res.json();
                             const city = data.address.city || data.address.town || data.address.village || '';
                             const state = data.address.state || '';
                             const country = data.address.country || '';
                             setCurrentLocation(city || state || country);
+                            console.log(data.address.city || data.address.town || data.address.village || '');
+                            
                         } catch (err) {
                             setCurrentLocation(`${latitude},${longitude}`);
                         }
@@ -144,10 +146,12 @@ const IdPage = () => {
                 }
             }
             if (item.type === 'Location' && currentLocation) {
-                const locationMatch = 
+                // Support matching city, state, country, and state_district
+                const locationMatch =
                     (details.city && currentLocation.toLowerCase().includes(details.city.toLowerCase())) ||
                     (details.state && currentLocation.toLowerCase().includes(details.state.toLowerCase())) ||
-                    (details.country && currentLocation.toLowerCase().includes(details.country.toLowerCase()));
+                    (details.country && currentLocation.toLowerCase().includes(details.country.toLowerCase())) ||
+                    (details.state_district && currentLocation.toLowerCase().includes(details.state_district.toLowerCase()));
                 if (locationMatch && details.url) {
                     return {
                         url: details.url,
@@ -183,7 +187,6 @@ const IdPage = () => {
                 }
             }
         }
-        // Return default URL and title if no matches found
         return {
             url: jsonData?.defaultUrl || jsonData?.defaultURL || '',
             title: jsonData?.title || '',
@@ -200,12 +203,14 @@ const IdPage = () => {
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
                 setUrlData(data);
+                console.log(data,"Data");
+                
                 // Determine which URL and title to display
                 if (data.jsonData) {
                     const match = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng, data.count);
                     if (match.url) {
                         const finalUrl = match.url.startsWith('http') ? match.url : `https://${match.url}`;
-                        window.location.replace(finalUrl);
+                        // window.location.replace(finalUrl);
                         return;
                     }
                     setDisplayUrl('');
