@@ -58,22 +58,32 @@ const IdPage = () => {
         }
         if (!currentLocation || !userLatLng) {
             if (navigator.geolocation) {
-                navigator.geolocation.getCurrentPosition(async (position) => {
-                    const { latitude, longitude } = position.coords;
-                    setUserLatLng({ lat: latitude, lng: longitude });
-                    if (!currentLocation) {
-                        try {
-                            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                            const data = await res.json();
-                            const locationName = data.address.state_district || data.address.state || '';
-                            setCurrentLocation(locationName);
-                            console.log('Detected Location:', locationName);
-                        } catch (err) {
-                            setCurrentLocation(`${latitude},${longitude}`);
-                            console.log('Detected Location:', `${latitude},${longitude}`);
+                navigator.geolocation.getCurrentPosition(
+                    async (position) => {
+                        const { latitude, longitude } = position.coords;
+                        setUserLatLng({ lat: latitude, lng: longitude });
+                        if (!currentLocation) {
+                            try {
+                                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+                                const data = await res.json();
+                                const locationName = data.address.state_district || data.address.state || '';
+                                setCurrentLocation(locationName);
+                                console.log('Detected Location:', locationName);
+                            } catch (err) {
+                                setCurrentLocation(`${latitude},${longitude}`);
+                                console.log('Detected Location:', `${latitude},${longitude}`);
+                            }
                         }
+                    },
+                    async (error) => {
+                        // Log geolocation error to Tetr
+                        try {
+                            const { logErrorToTetr } = await import('./api');
+                            logErrorToTetr(error, { source: 'geolocation', id });
+                        } catch (e) {}
+                        alert('Location error: ' + (error?.message || 'Unknown location error.'));
                     }
-                });
+                );
             }
         }
     }, []);
@@ -243,6 +253,7 @@ const IdPage = () => {
             } catch (error) {
                 console.error('Error fetching URL data:', error);
                 setLoading(false);
+                alert('Error: ' + (error?.message || 'Something went wrong. Please try again.'));
             }
         };
         fetchUrlData();

@@ -30,4 +30,19 @@ api.interceptors.response.use(
   }
 );
 
+
+// Simple logger for errors (send to Tetr)
+export const logErrorToTetr = async (error, extra = {}) => {
+  try {
+    await api.post('https://tetr.sakksh.com/log', {
+      error: typeof error === 'string' ? error : error?.message || JSON.stringify(error),
+      ...extra,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (e) {
+    // Silently fail if logging fails
+    // Optionally, console.error(e);
+  }
+};
+
 export default api;
