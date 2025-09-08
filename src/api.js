@@ -34,7 +34,7 @@ api.interceptors.response.use(
 // Simple logger for errors (send to Tetr)
 export const logErrorToTetr = async (error, extra = {}) => {
   try {
-    await api.post('https://tandt.sakksh.com/log', {
+    await api.post('https://tandt.api.sakksh.com/log', {
       error: typeof error === 'string' ? error : error?.message || JSON.stringify(error),
       ...extra,
       timestamp: new Date().toISOString(),
@@ -43,6 +43,36 @@ export const logErrorToTetr = async (error, extra = {}) => {
     // Silently fail if logging fails
     // Optionally, console.error(e);
   }
+};
+
+// Function to send scanned data to the server
+export const sendScanData = async (scannedCode, userId, userName, userRole, companyName) => {
+    const url = 'https://tandt.api.sakksh.com/genbarcode/scan';
+
+    // Get the user's location (latitude and longitude)
+    const latitude = 0.0; // Replace with actual latitude if available
+    const longitude = 0.0; // Replace with actual longitude if available
+
+    const payload = {
+        deviceId: navigator.userAgent || 'unknown-device',
+        latitude,
+        longitude,
+        barcodeDetails: data.barcodeDetails || { scannedUrl: scannedCode },
+        isAuthenticated: false,
+        userId: userId || '',
+        userName: userName || '',
+        userRole: userRole || '',
+        companyName: companyName || '',
+        barcodeId: scannedCode.split('/').pop() || scannedCode
+    };
+
+    try {
+        const response = await api.post(url, payload);
+        return response.data;
+    } catch (error) {
+        console.error('Error sending scan data:', error);
+        throw error;
+    }
 };
 
 export default api;

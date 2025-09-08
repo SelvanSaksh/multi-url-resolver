@@ -1,4 +1,4 @@
-    // Helper: calculate distance between two lat/lng in meters
+// Helper: calculate distance between two lat/lng in meters
     function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
         function deg2rad(deg) {
             return deg * (Math.PI/180);
@@ -18,7 +18,14 @@
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import barcodeIcon from './assets/barcode.svg';
-import api from './api';
+import api, { sendScanData } from './api';
+// Import all images from the assets/images folder
+import GenerateImage from './assets/images/Generate.png';
+import HistoryImage from './assets/images/History.png';
+import PackingImage from './assets/images/Packing.png';
+import PickingImage from './assets/images/Picking.png';
+import ScaningImage from './assets/images/Scaning.png';
+
 // import { useParams, useSearchParams } from 'react-router-dom';
 
 const isMobile = () => {
@@ -61,6 +68,7 @@ const IdPage = () => {
             try {
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
+
                 const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
                 if (hasLocationType && (!currentLocation || !userLatLng)) {
                     if (navigator.geolocation) {
@@ -68,6 +76,7 @@ const IdPage = () => {
                             async (position) => {
                                 const { latitude, longitude } = position.coords;
                                 setUserLatLng({ lat: latitude, lng: longitude });
+
                                 if (!currentLocation) {
                                     try {
                                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
@@ -80,19 +89,58 @@ const IdPage = () => {
                                         console.log('Detected Location:', `${latitude},${longitude}`);
                                     }
                                 }
+
+                                // Ensure all required data is available before making the API call
+                                if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
+                                    const payload = {
+                                        barcode_id: data.jsonData.barcodeDetails.id,
+                                        barcode_details: data.jsonData.barcodeDetails,
+                                        latitude: latitude || null,
+                                        longitude: longitude || null,
+                                    };
+
+                                    const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
+                                    try {
+                                        const scanResponse = await api.post(scanUrl, payload);
+                                        console.log('Scan details sent successfully:', scanResponse.data);
+                                    } catch (error) {
+                                        console.error('Failed to send scan details:', error);
+                                    }
+                                } else {
+                                    console.warn('Required data is missing. Skipping API call.');
+                                }
                             },
                             async (error) => {
                                 try {
                                     const { logErrorToTetr } = await import('./api');
                                     logErrorToTetr(error, { source: 'geolocation', id });
                                 } catch (e) {}
-                                alert('Location error: ' + (error?.message || 'Unknown location error.'));
                             }
                         );
                     }
+                } else {
+                    // Ensure all required data is available before making the API call
+                    if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
+                        const payload = {
+                            barcode_id: data.jsonData.barcodeDetails.id,
+                            barcode_details: data.jsonData.barcodeDetails,
+                            latitude: null,
+                            longitude: null,
+                        };
+
+                        const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
+                        try {
+                            const scanResponse = await api.post(scanUrl, payload);
+                            console.log('Scan details sent successfully:', scanResponse.data);
+                        } catch (error) {
+                            console.error('Failed to send scan details:', error);
+                        }
+                    } else {
+                        console.warn('Required data is missing. Skipping API call.');
+                    }
                 }
             } catch (error) {
-                // fail silently, location is not critical for non-location types
+                console.error('Error fetching barcode details:', error);
             }
         };
         checkAndFetchLocation();
@@ -101,6 +149,7 @@ const IdPage = () => {
     const [mobile, setMobile] = useState(true);
     const [urlData, setUrlData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [showDetails, setShowDetails] = useState(false);
     const [displayUrl, setDisplayUrl] = useState('');
     const [displayTitle, setDisplayTitle] = useState('');
 
@@ -250,28 +299,92 @@ const IdPage = () => {
                         redirectUrl = deviceObj.details.url;
                     }
                 }
-                // Fallback to defaultURL if no device match
                 if (!redirectUrl) {
                     redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
                 }
-                console.log('Chosen redirectUrl:', redirectUrl);
-                if (redirectUrl) {
-                    const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
-                    console.log('Redirecting to:', finalUrl);
-                    window.location.replace(finalUrl);
-                    return;
-                }
-                // If no redirect, show error and clear loading
-                setLoading(false);
-                alert('No valid URL found for this QR code.');
+                console.log('Fetched URL data (redirect postponed):', redirectUrl);
+                // Do not redirect here. Redirection will happen only after
+                // the scan API (`/genbarcode/scan`) returns a response.
+                // Keep `loading` true so the asset image stays visible until
+                // the scan flow completes.
             } catch (error) {
                 console.error('Error fetching URL data:', error);
                 setLoading(false);
-                alert('Error: ' + (error?.message || 'Something went wrong. Please try again.'));
             }
         };
         fetchUrlData();
     }, [id, sessionExpired]);
+
+    const [loadingImage, setLoadingImage] = useState(null);
+
+    useEffect(() => {
+        const images = [
+            GenerateImage,
+            HistoryImage,
+            PackingImage,
+            PickingImage,
+            ScaningImage
+        ];
+        const randomImage = images[Math.floor(Math.random() * images.length)];
+        setLoadingImage(randomImage);
+    }, []);
+
+    useEffect(() => {
+        const fetchAndSendBarcodeDetails = async () => {
+            try {
+                // Fetch barcode details
+                const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
+                const data = response.data;
+
+                // Extract barcode details
+                const barcodeDetails = data?.jsonData?.data || {};
+
+                // Prepare payload
+                const payload = {
+                    barcodeDetails:{...barcodeDetails,...{barcodeImageUrl:data?.barcodeImageUrl,defaultURL:data?.defaultURL}},
+                    barcodeId:data?.id,
+                    userLatLng,
+                    latitude: userLatLng?.lat ?? null,
+                    longitude: userLatLng?.lng ?? null,
+                };
+
+                // Log payload for debugging
+                console.log('Prepared payload (will send scan):', payload);
+
+                // Keep loader visible while scan API is in progress
+                setLoading(true);
+
+                // Send payload to the specified URL and wait for response
+                const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
+                const scanResponse = await api.post(scanUrl, payload);
+
+                console.log('Scan details sent successfully:', scanResponse.data);
+
+                // Proceed with redirection after successful data storage
+                let redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
+                if (redirectUrl) {
+                    const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
+                    console.log('Redirecting to after scan:', finalUrl);
+                    window.location.replace(finalUrl);
+                    return; // if redirect works, we leave the page
+                }
+
+                // No redirect URL: reveal details to user
+                setShowDetails(true);
+            } catch (error) {
+                console.error('Failed to send barcode details or redirect:', error);
+                // reveal page so user can see message / retry
+                setShowDetails(true);
+                alert('Error: ' + (error?.message || 'Something went wrong. Please try again.'));
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        if (id) {
+            fetchAndSendBarcodeDetails();
+        }
+    }, [id, userLatLng]);
 
     if (sessionExpired) {
         return (
@@ -284,11 +397,10 @@ const IdPage = () => {
             </div>
         );
     }
-    if (loading) {
+    if (loading || !showDetails) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
-                <div style={mobile ? mobileStyles.spinner : desktopStyles.spinner}></div>
-                <p style={{ color: '#1976d2', marginTop: '16px' }}>Loading URL information...</p>
+                {loadingImage && <img src={loadingImage} alt="Loading" style={{ maxWidth: '100%', height: 'auto' }} />}
             </div>
         );
     }
