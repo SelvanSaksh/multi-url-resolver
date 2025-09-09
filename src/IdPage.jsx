@@ -41,6 +41,50 @@ const IdPage = () => {
     const queryString = window.location.search;
     const queryParams = new URLSearchParams(queryString);
     const [currentLocation, setCurrentLocation] = useState(queryParams.get('curlocation') || '');
+    const [location, setLocation] = useState({ lat: null, lng: null });
+    const [deviceType, setDeviceType] = useState("Unknown");
+
+  useEffect(() => {
+    const ua = navigator.userAgent || navigator.vendor || window.opera;
+
+    if (/android/i.test(ua)) {
+      setDeviceType("Android");
+    } else if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
+      setDeviceType("iOS (iPhone/iPad)");
+    } else if (/Macintosh|Windows|Linux/.test(ua)) {
+      setDeviceType("Laptop/Desktop");
+    } else {
+      setDeviceType("Unknown Device");
+    }
+    
+  }, []);
+
+
+
+     useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+          console.log("Location fetched:", position.coords);
+        },
+        (err) => {
+          console.error("Geolocation error:", err);
+          setError(err.message);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,          
+          maximumAge: 0,          
+        }
+      );
+    } else {
+      setError("Geolocation is not supported by this browser.");
+    }
+  }, []);
    
     useEffect(() => {
         // Detect refresh using Navigation Timing API (modern browsers)
@@ -332,41 +376,34 @@ const IdPage = () => {
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
             try {
-                // Fetch barcode details
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
-
-                // Extract barcode details
                 const barcodeDetails = data?.jsonData?.data || {};
 
-                // Prepare payload
                 const payload = {
                     barcodeDetails:{...barcodeDetails,...{barcodeImageUrl:data?.barcodeImageUrl,defaultURL:data?.defaultURL}},
                     barcodeId:data?.id,
                     userLatLng,
-                    latitude: userLatLng?.lat ?? null,
-                    longitude: userLatLng?.lng ?? null,
+                    latitude: location?.lat ?? null,
+                    longitude: location?.lng ?? null,
+                    deviceType:deviceType
                 };
 
-                // Log payload for debugging
                 console.log('Prepared payload (will send scan):', payload);
 
-                // Keep loader visible while scan API is in progress
                 setLoading(true);
 
-                // Send payload to the specified URL and wait for response
                 const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
                 const scanResponse = await api.post(scanUrl, payload);
 
                 console.log('Scan details sent successfully:', scanResponse.data);
 
-                // Proceed with redirection after successful data storage
                 let redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
                     console.log('Redirecting to after scan:', finalUrl);
-                    window.location.replace(finalUrl);
-                    return; // if redirect works, we leave the page
+                    // window.location.replace(finalUrl);
+                    return;
                 }
 
                 // No redirect URL: reveal details to user
