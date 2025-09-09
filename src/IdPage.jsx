@@ -402,7 +402,7 @@ const IdPage = () => {
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
                     console.log('Redirecting to after scan:', finalUrl);
-                    // window.location.replace(finalUrl);
+                    window.location.replace(finalUrl);
                     return;
                 }
 
