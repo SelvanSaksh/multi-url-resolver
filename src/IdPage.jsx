@@ -398,7 +398,34 @@ const IdPage = () => {
 
                 console.log('Scan details sent successfully:', scanResponse.data);
 
-                let redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
+                // Device detection for redirect
+                const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+                let detectedDeviceType = '';
+                if (/android/i.test(userAgent)) {
+                    detectedDeviceType = 'Android';
+                } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+                    detectedDeviceType = 'iPhone';
+                }
+                console.log('Detected deviceType for redirect:', detectedDeviceType);
+
+                // Device-based redirect URL selection
+                let redirectUrl = '';
+                if (data.jsonData && Array.isArray(data.jsonData.data)) {
+                    const deviceObj = data.jsonData.data.find(
+                        item => item.type === 'Device' && item.details && item.details.deviceType === detectedDeviceType
+                    );
+                    if (deviceObj && deviceObj.details && deviceObj.details.url) {
+                        redirectUrl = deviceObj.details.url;
+                        console.log('Found device-specific URL for', detectedDeviceType + ':', redirectUrl);
+                    }
+                }
+                
+                // Fallback to default URL if no device-specific URL found
+                if (!redirectUrl) {
+                    redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
+                    console.log('Using default URL:', redirectUrl);
+                }
+                
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
                     console.log('Redirecting to after scan:', finalUrl);
