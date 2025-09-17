@@ -612,7 +612,7 @@ const IdPage = () => {
                     console.log('🌍 User Coordinates:', userLatLng);
                     
                     // Perform the actual redirection
-                    window.location.replace(finalUrl);
+                    // window.location.replace(finalUrl);
                     return;
                 }
 
