@@ -60,6 +60,8 @@ const IdPage = () => {
     const [error, setError] = useState(null);
     const [showLocationPrompt, setShowLocationPrompt] = useState(false);
     const [locationRequired, setLocationRequired] = useState(false);
+    const [dataLoaded, setDataLoaded] = useState(false);
+    const [locationDataReady, setLocationDataReady] = useState(false);
 
   useEffect(() => {
     const ua = navigator.userAgent || navigator.vendor || window.opera;
@@ -179,9 +181,12 @@ const IdPage = () => {
                                             state: locData.address.state,
                                             country: locData.address.country
                                         });
+                                        setLocationDataReady(true);
+                                        console.log('✅ Location data ready for redirection logic');
                                     } catch (err) {
                                         setCurrentLocation(`${latitude},${longitude}`);
                                         console.log('⚠️ Error getting location name, using coordinates:', `${latitude},${longitude}`);
+                                        setLocationDataReady(true);
                                     }
                                 }
 
@@ -224,6 +229,9 @@ const IdPage = () => {
                                     setError('Location access failed. Location-based routing requires your location.');
                                 }
                                 
+                                // Set location data as ready even if failed, so redirection can proceed with defaults
+                                setLocationDataReady(true);
+                                
                                 try {
                                     const { logErrorToTetr } = await import('./api');
                                     logErrorToTetr(error, { source: 'geolocation', id });
@@ -237,6 +245,10 @@ const IdPage = () => {
                         );
                     }
                 } else {
+                    // No location required, set ready state immediately
+                    console.log('📍 No location-based routing required');
+                    setLocationDataReady(true);
+                    
                     if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
                         const payload = {
                             barcode_id: data.jsonData.barcodeDetails.id,
@@ -533,6 +545,18 @@ const IdPage = () => {
     }, [id, sessionExpired]);
 
     const [loadingImage, setLoadingImage] = useState(null);
+    
+    // Timeout to ensure redirection doesn't hang indefinitely waiting for location
+    useEffect(() => {
+        if (locationRequired && !locationDataReady) {
+            const timeout = setTimeout(() => {
+                console.log('⏰ Location data timeout - proceeding without location');
+                setLocationDataReady(true);
+            }, 10000); // 10 second timeout
+            
+            return () => clearTimeout(timeout);
+        }
+    }, [locationRequired, locationDataReady]);
 
     useEffect(() => {
         const images = [
@@ -548,9 +572,21 @@ const IdPage = () => {
 
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
+            // Check if we have location-based routing requirements
+            const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
+            const data = response.data;
+            const hasLocationRouting = Array.isArray(data?.jsonData?.data) && 
+                                     data.jsonData.data.some(item => item.type === 'Location');
+            
+            // If location routing is required but location data is not ready, wait
+            if (hasLocationRouting && !locationDataReady) {
+                console.log('🔄 Location routing required but location data not ready yet. Waiting...');
+                return;
+            }
+            
+            console.log('✅ All required data ready. Proceeding with redirection logic...');
+            
             try {
-                const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
-                const data = response.data;
                 const barcodeDetails = data?.jsonData?.data || {};
 
                 const payload = {
@@ -676,7 +712,7 @@ const IdPage = () => {
         if (id) {
             fetchAndSendBarcodeDetails();
         }
-    }, [id, userLatLng, currentLocation, deviceType]);
+    }, [id, userLatLng, currentLocation, deviceType, locationDataReady]);
 
     if (sessionExpired) {
         return (
