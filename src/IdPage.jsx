@@ -125,12 +125,29 @@ const IdPage = () => {
                                     try {
                                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                                         const locData = await res.json();
-                                        const locationName = locData.address.state_district || locData.address.state || '';
-                                        setCurrentLocation(locationName);
-                                        console.log('Detected Location:', locationName);
+                                        console.log('🗺️ Full location data from OpenStreetMap API:', locData);
+                                        
+                                        // Try to get the most specific location: city -> town -> village -> state_district -> state
+                                        const detectedCity = locData.address.city || 
+                                                            locData.address.town || 
+                                                            locData.address.village || 
+                                                            locData.address.state_district || 
+                                                            locData.address.state || 
+                                                            '';
+                                        
+                                        setCurrentLocation(detectedCity);
+                                        console.log('🏙️ Detected City/Location from Street Map API:', detectedCity);
+                                        console.log('📋 Address breakdown:', {
+                                            city: locData.address.city,
+                                            town: locData.address.town,
+                                            village: locData.address.village,
+                                            state_district: locData.address.state_district,
+                                            state: locData.address.state,
+                                            country: locData.address.country
+                                        });
                                     } catch (err) {
                                         setCurrentLocation(`${latitude},${longitude}`);
-                                        console.log('Detected Location:', `${latitude},${longitude}`);
+                                        console.log('⚠️ Error getting location name, using coordinates:', `${latitude},${longitude}`);
                                     }
                                 }
 
@@ -257,19 +274,75 @@ const IdPage = () => {
                 }
             }
             if (item.type === 'Location' && currentLocation) {
+                console.log('🔍 Checking location match for:', {
+                    'Street Map API Location': currentLocation,
+                    'Response Data City': details.city,
+                    'Response Data State': details.state,
+                    'Response Data Country': details.country,
+                    'Full Item Details': details
+                });
+                
                 // Helper to remove emoji and extra spaces
                 const clean = str => str ? str.replace(/[^\p{L}\p{N} ]+/gu, '').trim().toLowerCase() : '';
                 const currentLocClean = clean(currentLocation);
-                const cityClean = clean(details.city);
-                const stateClean = clean(details.state);
-                const countryClean = clean(details.country);
-                const stateDistrictClean = clean(details.state_district);
-                const locationMatch =
-                    (cityClean && currentLocClean.includes(cityClean)) ||
-                    (stateClean && currentLocClean.includes(stateClean)) ||
-                    (countryClean && currentLocClean.includes(countryClean)) ||
-                    (stateDistrictClean && currentLocClean.includes(stateDistrictClean));
-                if (locationMatch && details.url) {
+                const responseCity = clean(details.city);
+                const responseState = clean(details.state);
+                const responseCountry = clean(details.country);
+                const responseStateDistrict = clean(details.state_district);
+                
+                console.log('🧹 Cleaned strings for comparison:', {
+                    'Street Map Location (cleaned)': currentLocClean,
+                    'Response City (cleaned)': responseCity,
+                    'Response State (cleaned)': responseState,
+                    'Response Country (cleaned)': responseCountry,
+                    'Response State District (cleaned)': responseStateDistrict
+                });
+                
+                // Simple direct city name matching (bidirectional)
+                let cityMatch = responseCity && (
+                    currentLocClean.includes(responseCity) || 
+                    responseCity.includes(currentLocClean) ||
+                    currentLocClean === responseCity
+                );
+                
+                // Handle common city name variations if direct match fails
+                if (!cityMatch && responseCity && currentLocClean) {
+                    const commonVariations = [
+                        ['bengaluru', 'bangalore'],
+                        ['mumbai', 'bombay'],
+                        ['kolkata', 'calcutta'],
+                        ['chennai', 'madras'],
+                        ['pune', 'poona'],
+                        ['kochi', 'cochin']
+                    ];
+                    
+                    for (const [name1, name2] of commonVariations) {
+                        if ((responseCity === name1 && currentLocClean === name2) ||
+                            (responseCity === name2 && currentLocClean === name1)) {
+                            cityMatch = true;
+                            console.log('🔄 Found city variation match:', currentLocClean, '↔', responseCity);
+                            break;
+                        }
+                    }
+                }
+                
+                console.log('🎯 Location matching results:', {
+                    'Raw Street Map Location': currentLocation,
+                    'Raw Response City': details.city,
+                    'Cleaned Street Map': currentLocClean,
+                    'Cleaned Response City': responseCity,
+                    cityMatch,
+                    'Direct includes check': currentLocClean.includes(responseCity),
+                    'Reverse includes check': responseCity.includes(currentLocClean),
+                    'Exact match check': currentLocClean === responseCity
+                });
+                
+                if (cityMatch && details.url) {
+                    console.log('✅ CITY MATCH FOUND! URL:', details.url);
+                    console.log('📍 Matched:', {
+                        'Street Map Location': currentLocation,
+                        'Response City': details.city
+                    });
                     return {
                         url: details.url,
                         title: item.title || jsonData?.title || '',
@@ -408,7 +481,7 @@ const IdPage = () => {
                 }
                 console.log('Detected deviceType for redirect:', detectedDeviceType);
 
-                // Device-based redirect URL selection
+                // First, try device-based redirect URL selection
                 let redirectUrl = '';
                 if (data.jsonData && Array.isArray(data.jsonData.data)) {
                     const deviceObj = data.jsonData.data.find(
@@ -420,7 +493,17 @@ const IdPage = () => {
                     }
                 }
                 
-                // Fallback to default URL if no device-specific URL found
+                if (!redirectUrl) {
+                    console.log('No device-specific URL found. Trying dynamic routing with:', {
+                        currentLocation,
+                        userLatLng,
+                        dataArray: data.jsonData?.data
+                    });
+                    const dynamicResult = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng);
+                    redirectUrl = dynamicResult.url;
+                    console.log('Dynamic routing result:', dynamicResult);
+                }
+                
                 if (!redirectUrl) {
                     redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
                     console.log('Using default URL:', redirectUrl);
@@ -428,12 +511,24 @@ const IdPage = () => {
                 
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
-                    console.log('Redirecting to after scan:', finalUrl);
+                    console.log('🎯 REDIRECTION URL MATCHED!');
+                    console.log('📍 Final redirect URL:', finalUrl);
+                    console.log('🔍 URL Source: Device-specific or Dynamic routing');
+                    console.log('📊 Current Location:', currentLocation);
+                    console.log('📱 Device Type:', detectedDeviceType);
+                    console.log('🌍 User Coordinates:', userLatLng);
+                    
+                    // Perform the actual redirection
                     window.location.replace(finalUrl);
                     return;
                 }
 
                 // No redirect URL: reveal details to user
+                console.log('❌ NO REDIRECTION URL MATCHED');
+                console.log('📍 Current Location:', currentLocation);
+                console.log('📱 Device Type:', detectedDeviceType);
+                console.log('🌍 User Coordinates:', userLatLng);
+                console.log('📋 Available data:', data.jsonData?.data);
                 setShowDetails(true);
             } catch (error) {
                 console.error('Failed to send barcode details or redirect:', error);
@@ -448,7 +543,7 @@ const IdPage = () => {
         if (id) {
             fetchAndSendBarcodeDetails();
         }
-    }, [id, userLatLng]);
+    }, [id, userLatLng, currentLocation, deviceType]);
 
     if (sessionExpired) {
         return (
