@@ -19,6 +19,20 @@ import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import barcodeIcon from './assets/barcode.svg';
 import api, { sendScanData } from './api';
+
+// Function to send logs to server for PM2 monitoring
+const sendServerLog = async (logData) => {
+    try {
+        await api.post('https://tandt.api.sakksh.com/genbarcode/log', {
+            timestamp: new Date().toISOString(),
+            type: 'redirection',
+            data: logData
+        });
+    } catch (error) {
+        console.error('Failed to send server log:', error);
+    }
+};
+
 // Import all images from the assets/images folder
 import GenerateImage from './assets/images/Generate.png';
 import HistoryImage from './assets/images/History.png';
@@ -597,30 +611,57 @@ const IdPage = () => {
                 
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
+                    const logData = {
+                        id: id,
+                        finalUrl: finalUrl,
+                        streetMapLocation: currentLocation,
+                        matchedCity: data.jsonData?.data?.find(item => 
+                            item.type === 'Location' && item.details?.url === redirectUrl.replace('https://', '').replace('http://', '')
+                        )?.details?.city || 'Unknown',
+                        deviceType: detectedDeviceType,
+                        userCoordinates: userLatLng,
+                        source: 'redirection_success'
+                    };
+                    
                     console.log('🎯 REDIRECTION URL MATCHED!');
                     console.log('📍 Final redirect URL:', finalUrl);
                     console.log('🔍 URL Source: Device-specific or Dynamic routing');
                     console.log('📊 Street Map Location (detected):', currentLocation);
                     console.log('🏙️ Matched Location Data:', {
                         'Street Map API Result': currentLocation,
-                        'Matched City from Response': data.jsonData?.data?.find(item => 
-                            item.type === 'Location' && item.details?.url === redirectUrl.replace('https://', '').replace('http://', '')
-                        )?.details?.city || 'Unknown',
+                        'Matched City from Response': logData.matchedCity,
                         'Final URL': finalUrl
                     });
                     console.log('📱 Device Type:', detectedDeviceType);
                     console.log('🌍 User Coordinates:', userLatLng);
                     
+                    // Send log to server for PM2 monitoring
+                    sendServerLog(logData);
+                    
                     // Perform the actual redirection
-                    // window.location.replace(finalUrl);
+                    window.location.replace(finalUrl);
                     return;
                 }
 
+                // No redirect URL: reveal details to user
+                const noMatchLogData = {
+                    id: id,
+                    currentLocation: currentLocation,
+                    deviceType: detectedDeviceType,
+                    userCoordinates: userLatLng,
+                    availableData: data.jsonData?.data,
+                    source: 'no_redirection_match'
+                };
+                
                 console.log('❌ NO REDIRECTION URL MATCHED');
                 console.log('📍 Current Location:', currentLocation);
                 console.log('📱 Device Type:', detectedDeviceType);
                 console.log('🌍 User Coordinates:', userLatLng);
                 console.log('📋 Available data:', data.jsonData?.data);
+                
+                // Send log to server for PM2 monitoring
+                sendServerLog(noMatchLogData);
+                
                 setShowDetails(true);
             } catch (error) {
                 console.error('Failed to send barcode details or redirect:', error);
