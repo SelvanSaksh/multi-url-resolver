@@ -15,7 +15,7 @@
         const d = R * c; // Distance in meters
         return d;
     }
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import barcodeIcon from './assets/barcode.svg';
 import api, { sendScanData } from './api';
@@ -117,13 +117,14 @@ const IdPage = () => {
         //     setSessionExpired(true);
         //     return;
         // }
-        // Session flag
+        // Session flag: only mark that the page was visited.
+        // NOTE: previously we set `sessionExpired` when `visited` existed which
+        // caused the component to show a 'Session expired' screen on subsequent
+        // mounts. That produced an unexpected automatic refresh/redirect in some
+        // flows (especially during location permission flow). To avoid that,
+        // only set the `visited` flag and don't expire the session here.
         if (!sessionStorage.getItem('visited')) {
             sessionStorage.setItem('visited', 'true');
-        } else {
-            setShowWarning(true);
-            setSessionExpired(true);
-            return;
         }
         const checkAndFetchLocation = async () => {
             try {
@@ -284,6 +285,8 @@ const IdPage = () => {
     const [displayTitle, setDisplayTitle] = useState('');
 
     const [userLatLng, setUserLatLng] = useState(null);
+    // Guard ref to ensure the scan/redirection flow runs only once
+    const scanSentRef = useRef(false);
     
     const requestLocationPermission = () => {
         console.log('🔄 Requesting location permission...');
@@ -573,6 +576,11 @@ const IdPage = () => {
 
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
+            // Prevent duplicate invocation which can cause repeated redirects/reloads
+            if (scanSentRef.current) {
+                console.log('Scan/redirection already performed; skipping duplicate invocation.');
+                return;
+            }
             // Check if we have location-based routing requirements
             const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
             const data = response.data;
@@ -605,6 +613,8 @@ const IdPage = () => {
 
                 const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
                 const scanResponse = await api.post(scanUrl, payload);
+                // Mark that we have sent the scan to avoid duplicate sends
+                scanSentRef.current = true;
 
                 console.log('Scan details sent successfully:', scanResponse.data);
 
