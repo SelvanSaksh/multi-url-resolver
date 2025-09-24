@@ -71,10 +71,17 @@ const IdPage = () => {
                 setUserLatLng({ lat: coords.lat, lng: coords.lng });
                 console.log('Location fetched (cached):', coords);
             })
-            .catch(err => {
-                console.error('Geolocation error:', err);
-                setError(err.message || String(err));
-            });
+          .catch(err => {
+              console.error('Geolocation error:', err);
+              const code = err && err.code;
+              // If permission is denied, show the location prompt so user can enable it
+              if (code === 1) {
+                  setShowLocationPrompt(true);
+                  setError('Location access denied. Please enable location services to use location-based routing.');
+              } else {
+                  setError(err.message || String(err));
+              }
+          });
     }, []);
 
     useEffect(() => {
@@ -289,10 +296,15 @@ const IdPage = () => {
                 async (err) => {
                     console.warn('Browser geolocation failed:', err && err.message, err && err.code);
 
-                    // If the failure is due to insecure origin or permission denied on mobile
-                    // try an IP-based fallback (approximate) so mobile can still proceed.
-                    const isInsecureOrigin = err && err.message && /secure origin/i.test(err.message);
-                    if (isInsecureOrigin || (err && err.code === 1 && /secure/i.test(err.message || ''))) {
+                    // If permission was explicitly denied, do not attempt IP fallback.
+                    if (err && err.code === 1) {
+                        reject(err);
+                        return;
+                    }
+
+                    // If the failure is due to insecure origin, try IP-based fallback (approximate).
+                    const isInsecureOrigin = err && err.message && /Only secure origins are allowed/i.test(err.message);
+                    if (isInsecureOrigin) {
                         try {
                             console.log('Attempting IP-based geolocation fallback (approximate).');
                             const res = await fetch('https://ipapi.co/json');
@@ -683,8 +695,7 @@ const IdPage = () => {
                         userCoordinates: userLatLng,
                         source: 'redirection_success'
                     };
-
-                    window.location.replace(finalUrl);
+                    // window.location.replace(finalUrl);
                     return;
                 }
 
