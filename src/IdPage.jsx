@@ -286,7 +286,34 @@ const IdPage = () => {
                     lastGeolocationRef.current = coords;
                     resolve(coords);
                 },
-                (err) => {
+                async (err) => {
+                    console.warn('Browser geolocation failed:', err && err.message, err && err.code);
+
+                    // If the failure is due to insecure origin or permission denied on mobile
+                    // try an IP-based fallback (approximate) so mobile can still proceed.
+                    const isInsecureOrigin = err && err.message && /secure origin/i.test(err.message);
+                    if (isInsecureOrigin || (err && err.code === 1 && /secure/i.test(err.message || ''))) {
+                        try {
+                            console.log('Attempting IP-based geolocation fallback (approximate).');
+                            const res = await fetch('https://ipapi.co/json');
+                            if (res.ok) {
+                                const ipJson = await res.json();
+                                const lat = parseFloat(ipJson.latitude ?? ipJson.lat);
+                                const lon = parseFloat(ipJson.longitude ?? ipJson.lon ?? ipJson.longitude);
+                                if (Number.isFinite(lat) && Number.isFinite(lon)) {
+                                    const coords = { lat, lng: lon };
+                                    lastGeolocationRef.current = coords;
+                                    console.log('IP-based geolocation success:', coords);
+                                    resolve(coords);
+                                    return;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('IP-based geolocation fallback failed:', e);
+                            // fallthrough to reject below
+                        }
+                    }
+
                     reject(err);
                 },
                 options
