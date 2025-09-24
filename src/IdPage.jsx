@@ -717,7 +717,7 @@ const IdPage = () => {
                         userCoordinates: userLatLng,
                         source: 'redirection_success'
                     };
-                    // window.location.replace(finalUrl);
+                    window.location.replace(finalUrl);
                     return;
                 }
 
