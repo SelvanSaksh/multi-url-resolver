@@ -21,17 +21,17 @@ import barcodeIcon from './assets/barcode.svg';
 import api, { sendScanData } from './api';
 
 // Function to send logs to server for PM2 monitoring
-const sendServerLog = async (logData) => {
-    try {
-        await api.post('https://tandt.api.sakksh.com/genbarcode/log', {
-            timestamp: new Date().toISOString(),
-            type: 'redirection',
-            data: logData
-        });
-    } catch (error) {
-        console.error('Failed to send server log:', error);
-    }
-};
+// const sendServerLog = async (logData) => {
+//     try {
+//         await api.post('https://tandt.api.sakksh.com/genbarcode/log', {
+//             timestamp: new Date().toISOString(),
+//             type: 'redirection',
+//             data: logData
+//         });
+//     } catch (error) {
+//         console.error('Failed to send server log:', error);
+//     }
+// };
 
 // Import all images from the assets/images folder
 import GenerateImage from './assets/images/Generate.png';
@@ -714,7 +714,7 @@ const IdPage = () => {
                     console.log('🌍 User Coordinates:', userLatLng);
                     
                     // Send log to server for PM2 monitoring
-                    sendServerLog(logData);
+                    // sendServerLog(logData);
                     
                     // Perform the actual redirection
                     window.location.replace(finalUrl);
@@ -738,7 +738,7 @@ const IdPage = () => {
                 console.log('📋 Available data:', data.jsonData?.data);
                 
                 // Send log to server for PM2 monitoring
-                sendServerLog(noMatchLogData);
+                // sendServerLog(noMatchLogData);
                 
                 setShowDetails(true);
             } catch (error) {
