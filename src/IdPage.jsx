@@ -736,15 +736,17 @@ const IdPage = () => {
         );
     }
 
-    // Show location permission prompt if location is required but not available
-    if (showLocationPrompt && locationRequired) {
+    // Show location permission prompt when the app needs location or the user denied permission
+    if (showLocationPrompt) {
         return (
             <div style={{ maxWidth: 500, margin: '0 auto', textAlign: 'center', padding: '2rem' }}>
                 <div style={{ marginBottom: '2rem' }}>
                     <div style={{ fontSize: '48px', marginBottom: '1rem' }}>📍</div>
-                    <h2 style={{ color: '#1976d2', marginBottom: '1rem' }}>Location Access Required</h2>
+                    <h2 style={{ color: '#1976d2', marginBottom: '1rem' }}>{locationRequired ? 'Location Access Required' : 'Location Access'}</h2>
                     <p style={{ color: '#666', marginBottom: '1rem', lineHeight: '1.5' }}>
-                        This QR code uses location-based routing to show you the most relevant content for your area.
+                        {locationRequired
+                            ? 'This QR code uses location-based routing to show you the most relevant content for your area.'
+                            : 'This app can provide a better experience with location access. Please enable location services.'}
                     </p>
                     {error && (
                         <div style={{
