@@ -49,39 +49,37 @@ const IdPage = () => {
     const [locationDataReady, setLocationDataReady] = useState(false);
     const [ip, setIp] = useState("");
 
-  useEffect(() => {
-    const fetchIP = async () => {
-      try {
-        const response = await fetch("https://api.ipify.org?format=json");
-        const data = await response.json();
-        setIp(data.ip);
-      } catch (err) {
-        console.error("Failed to fetch IP:", err);
-      }
-    };
+    useEffect(() => {
+        const fetchIP = async () => {
+            try {
+                const response = await fetch("https://api.ipify.org?format=json");
+                const data = await response.json();
+                setIp(data.ip);
+            } catch (err) {
+                console.error("Failed to fetch IP:", err);
+            }
+        };
 
-    fetchIP();
-  }, []);
+        fetchIP();
+    }, []);
 
-      useEffect(() => {
+    useEffect(() => {
         getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
             .then(coords => {
                 setLocation({ lat: coords.lat, lng: coords.lng });
-                // Also populate userLatLng so downstream routing/matching sees coordinates
                 setUserLatLng({ lat: coords.lat, lng: coords.lng });
                 console.log('Location fetched (cached):', coords);
             })
-          .catch(err => {
-              console.error('Geolocation error:', err);
-              const code = err && err.code;
-              // If permission is denied, show the location prompt so user can enable it
-              if (code === 1) {
-                  setShowLocationPrompt(true);
-                  setError('Location access denied. Please enable location services to use location-based routing.');
-              } else {
-                  setError(err.message || String(err));
-              }
-          });
+            .catch(err => {
+                console.error('Geolocation error:', err);
+                const code = err && err.code;
+                if (code === 1) {
+                    setShowLocationPrompt(true);
+                    setError('Location access denied. Please enable location services to use location-based routing.');
+                } else {
+                    setError(err.message || String(err));
+                }
+            });
     }, []);
 
     useEffect(() => {
@@ -519,7 +517,7 @@ const IdPage = () => {
                 const userLat = effectiveUserLatLng.lat;
                 const userLng = effectiveUserLatLng.lng;
                 const distance = getDistanceFromLatLonInMeters(userLat, userLng, apiLat, apiLng);
-                console.log(distance,"distance");
+                console.log(distance, "distance");
                 if (!isNaN(apiLat) && !isNaN(apiLng) && !isNaN(radius) && userLat && userLng) {
                     console.log(userLat, userLng, distance, "USER DATA");
                     if (distance <= radius) {
@@ -672,6 +670,30 @@ const IdPage = () => {
                         userLatLng,
                         dataArray: data.jsonData?.data
                     });
+
+                    // If there are geo-fencing rules, ensure we have coordinates before matching.
+                    const hasGeoFencing = Array.isArray(data.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Geo-fencing');
+                    if (hasGeoFencing && !(userLatLng || lastGeolocationRef.current)) {
+                        console.log('Geo-fencing rules present but no user coords — attempting to obtain coordinates...');
+                        try {
+                            const coords = await getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+                            if (coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
+                                setUserLatLng({ lat: coords.lat, lng: coords.lng });
+                                setLocation({ lat: coords.lat, lng: coords.lng });
+                                console.log('Coordinates obtained for geo-fencing:', coords);
+                            }
+                        } catch (geoErr) {
+                            console.warn('Failed to obtain coords for geo-fencing:', geoErr);
+                            if (geoErr && geoErr.code === 1) {
+                                // Permission denied — show prompt and stop processing until user enables it
+                                setShowLocationPrompt(true);
+                                setError('Location access denied. Please enable location services to continue.');
+                                return;
+                            }
+                            // other errors: IP fallback may have been applied inside getGeolocation; proceed
+                        }
+                    }
+
                     const dynamicResult = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng);
                     redirectUrl = dynamicResult.url;
                     console.log('Dynamic routing result:', dynamicResult);
