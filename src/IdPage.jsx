@@ -1,46 +1,31 @@
-// Helper: calculate distance between two lat/lng in meters
-    function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
-        function deg2rad(deg) {
-            return deg * (Math.PI/180);
-        }
-        const R = 6371000; // Radius of the earth in meters
-        const dLat = deg2rad(lat2-lat1);
-        const dLon = deg2rad(lon2-lon1);
-        const a = 
-            Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
-            Math.sin(dLon/2) * Math.sin(dLon/2)
-            ;
-        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        const d = R * c; // Distance in meters
-        return d;
+function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
+    function deg2rad(deg) {
+        return deg * (Math.PI / 180);
     }
+    const R = 6371000;
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        ;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const d = R * c;
+    return d;
+}
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import barcodeIcon from './assets/barcode.svg';
 import api, { sendScanData } from './api';
 
-// Function to send logs to server for PM2 monitoring
-// const sendServerLog = async (logData) => {
-//     try {
-//         await api.post('https://tandt.api.sakksh.com/genbarcode/log', {
-//             timestamp: new Date().toISOString(),
-//             type: 'redirection',
-//             data: logData
-//         });
-//     } catch (error) {
-//         console.error('Failed to send server log:', error);
-//     }
-// };
 
-// Import all images from the assets/images folder
 import GenerateImage from './assets/images/Generate.png';
 import HistoryImage from './assets/images/History.png';
 import PackingImage from './assets/images/Packing.png';
 import PickingImage from './assets/images/Picking.png';
 import ScaningImage from './assets/images/Scaning.png';
 
-// import { useParams, useSearchParams } from 'react-router-dom';
 
 const isMobile = () => {
     if (typeof window === 'undefined') return false;
@@ -48,7 +33,6 @@ const isMobile = () => {
 };
 
 const IdPage = () => {
-    // Session expired and warning state
     const [sessionExpired, setSessionExpired] = useState(false);
     const [showWarning, setShowWarning] = useState(false);
     const { id } = useParams();
@@ -64,54 +48,39 @@ const IdPage = () => {
     const [dataLoaded, setDataLoaded] = useState(false);
     const [locationDataReady, setLocationDataReady] = useState(false);
 
-  useEffect(() => {
-    const ua = navigator.userAgent || navigator.vendor || window.opera;
+      useEffect(() => {
+        getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
+            .then(coords => {
+                setLocation({ lat: coords.lat, lng: coords.lng });
+                // Also populate userLatLng so downstream routing/matching sees coordinates
+                setUserLatLng({ lat: coords.lat, lng: coords.lng });
+                console.log('Location fetched (cached):', coords);
+            })
+            .catch(err => {
+                console.error('Geolocation error:', err);
+                setError(err.message || String(err));
+            });
+    }, []);
 
-    if (/android/i.test(ua)) {
-      setDeviceType("Android");
-    } else if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
-      setDeviceType("iOS (iPhone/iPad)");
-    } else if (/Macintosh|Windows|Linux/.test(ua)) {
-      setDeviceType("Laptop/Desktop");
-    } else {
-      setDeviceType("Unknown Device");
-    }
-    
-  }, []);
-
-
-
-         useEffect(() => {
-                // Use the shared geolocation helper to avoid multiple prompts
-                getGeolocation({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
-                        .then(coords => {
-                                setLocation({ lat: coords.lat, lng: coords.lng });
-                                console.log('Location fetched (cached):', coords);
-                        })
-                        .catch(err => {
-                                console.error('Geolocation error:', err);
-                                setError(err.message || String(err));
-                        });
-        }, []);
-   
     useEffect(() => {
-        // Refresh validation (commented as requested)
-        // if (performance.getEntriesByType('navigation')[0]?.type === 'reload') {
-        //     setShowWarning(true);
-        //     setSessionExpired(true);
-        //     return;
-        // }
-        // if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) {
-        //     setShowWarning(true);
-        //     setSessionExpired(true);
-        //     return;
-        // }
-        // Session flag: only mark that the page was visited.
-        // NOTE: previously we set `sessionExpired` when `visited` existed which
-        // caused the component to show a 'Session expired' screen on subsequent
-        // mounts. That produced an unexpected automatic refresh/redirect in some
-        // flows (especially during location permission flow). To avoid that,
-        // only set the `visited` flag and don't expire the session here.
+        const ua = navigator.userAgent || navigator.vendor || window.opera;
+
+        if (/android/i.test(ua)) {
+            setDeviceType("Android");
+        } else if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
+            setDeviceType("iOS (iPhone/iPad)");
+        } else if (/Macintosh|Windows|Linux/.test(ua)) {
+            setDeviceType("Laptop/Desktop");
+        } else {
+            setDeviceType("Unknown Device");
+        }
+
+    }, []);
+
+
+
+
+    useEffect(() => {
         if (!sessionStorage.getItem('visited')) {
             sessionStorage.setItem('visited', 'true');
         }
@@ -121,17 +90,17 @@ const IdPage = () => {
                 const data = response.data;
 
                 const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
-                
+
                 if (hasLocationType) {
                     setLocationRequired(true);
                     console.log('📍 Location-based routing detected in data');
                 }
-                
+
                 if (hasLocationType && (!currentLocation || !userLatLng)) {
                     if (navigator.geolocation) {
                         // Check location permission first
                         if (navigator.permissions) {
-                            navigator.permissions.query({name: 'geolocation'}).then(function(result) {
+                            navigator.permissions.query({ name: 'geolocation' }).then(function (result) {
                                 console.log('📍 Location permission status:', result.state);
                                 if (result.state === 'denied') {
                                     console.log('❌ Location permission denied');
@@ -141,7 +110,7 @@ const IdPage = () => {
                                 }
                             });
                         }
-                        
+
                         getGeolocation()
                             .then(async (coords) => {
                                 console.log('✅ Location access granted (cached helper)');
@@ -154,14 +123,14 @@ const IdPage = () => {
                                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                                         const locData = await res.json();
                                         console.log('🗺️ Full location data from OpenStreetMap API:', locData);
-                                        
-                                        const detectedCity = locData.address.city || 
-                                                            locData.address.town || 
-                                                            locData.address.village || 
-                                                            locData.address.state_district || 
-                                                            locData.address.state || 
-                                                            '';
-                                        
+
+                                        const detectedCity = locData.address.city ||
+                                            locData.address.town ||
+                                            locData.address.village ||
+                                            locData.address.state_district ||
+                                            locData.address.state ||
+                                            '';
+
                                         if (!currentLocationAutoSetRef.current) {
                                             setCurrentLocation(detectedCity);
                                             currentLocationAutoSetRef.current = true;
@@ -204,46 +173,46 @@ const IdPage = () => {
                                     console.warn('Required data is missing. Skipping API call.');
                                 }
                             },
-                            (error) => {
-                                console.error('🚫 Geolocation error (helper):', error);
-                                console.log('📍 Location required but access failed (helper)');
-                                
-                                // Show location prompt for permission-related errors
-                                if (error.code === error.PERMISSION_DENIED) {
-                                    setShowLocationPrompt(true);
-                                    setError('Location access is required for location-based routing. Please enable location access and try again.');
-                                } else if (error.code === error.POSITION_UNAVAILABLE) {
-                                    setShowLocationPrompt(true);
-                                    setError('Unable to determine your location. Please check your location settings.');
-                                } else if (error.code === error.TIMEOUT) {
-                                    setShowLocationPrompt(true);
-                                    setError('Location request timed out. Please try again.');
-                                } else {
-                                    setShowLocationPrompt(true);
-                                    setError('Location access failed. Location-based routing requires your location.');
+                                (error) => {
+                                    console.error('🚫 Geolocation error (helper):', error);
+                                    console.log('📍 Location required but access failed (helper)');
+
+                                    // Show location prompt for permission-related errors
+                                    if (error.code === error.PERMISSION_DENIED) {
+                                        setShowLocationPrompt(true);
+                                        setError('Location access is required for location-based routing. Please enable location access and try again.');
+                                    } else if (error.code === error.POSITION_UNAVAILABLE) {
+                                        setShowLocationPrompt(true);
+                                        setError('Unable to determine your location. Please check your location settings.');
+                                    } else if (error.code === error.TIMEOUT) {
+                                        setShowLocationPrompt(true);
+                                        setError('Location request timed out. Please try again.');
+                                    } else {
+                                        setShowLocationPrompt(true);
+                                        setError('Location access failed. Location-based routing requires your location.');
+                                    }
+
+                                    // Set location data as ready even if failed, so redirection can proceed with defaults
+                                    setLocationDataReady(true);
+
+                                    try {
+                                        import('./api').then(({ logErrorToTetr }) => {
+                                            try { logErrorToTetr(error, { source: 'geolocation', id }); } catch (e) { }
+                                        }).catch(() => { });
+                                    } catch (e) { }
+                                },
+                                {
+                                    enableHighAccuracy: true,
+                                    timeout: 15000,
+                                    maximumAge: 60000
                                 }
-                                
-                                // Set location data as ready even if failed, so redirection can proceed with defaults
-                                setLocationDataReady(true);
-                                
-                                try {
-                                    import('./api').then(({ logErrorToTetr }) => {
-                                        try { logErrorToTetr(error, { source: 'geolocation', id }); } catch (e) {}
-                                    }).catch(() => {});
-                                } catch (e) {}
-                            },
-                            {
-                                enableHighAccuracy: true,
-                                timeout: 15000,
-                                maximumAge: 60000
-                            }
-                        );
+                            );
                     }
                 } else {
                     // No location required, set ready state immediately
                     console.log('📍 No location-based routing required');
                     setLocationDataReady(true);
-                    
+
                     if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
                         const payload = {
                             barcode_id: data.jsonData.barcodeDetails.id,
@@ -318,12 +287,12 @@ const IdPage = () => {
     useEffect(() => {
         scanSentRef.current = false;
     }, [id]);
-    
+
     const requestLocationPermission = () => {
         console.log('🔄 Requesting location permission...');
         setShowLocationPrompt(false);
         setError(null);
-        
+
         if (navigator.geolocation) {
             getGeolocation()
                 .then(async (coords) => {
@@ -336,11 +305,11 @@ const IdPage = () => {
                     try {
                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
                         const locData = await res.json();
-                        const detectedCity = locData.address.city || 
-                                            locData.address.town || 
-                                            locData.address.village || 
-                                            locData.address.state_district || 
-                                            locData.address.state || '';
+                        const detectedCity = locData.address.city ||
+                            locData.address.town ||
+                            locData.address.village ||
+                            locData.address.state_district ||
+                            locData.address.state || '';
                         if (!currentLocationAutoSetRef.current) {
                             setCurrentLocation(detectedCity);
                             currentLocationAutoSetRef.current = true;
@@ -366,7 +335,7 @@ const IdPage = () => {
             setError('Geolocation is not supported by this browser.');
         }
     };
-    
+
     const getCurrentTime = () => {
         const now = new Date();
         return now.toTimeString().slice(0, 5);
@@ -374,7 +343,7 @@ const IdPage = () => {
 
     const isTimeInRange = (startTime, endTime) => {
         const currentTime = getCurrentTime();
-        
+
         const timeToMinutes = (time) => {
             const [hours, minutes] = time.split(':').map(Number);
             return hours * 60 + minutes;
@@ -387,11 +356,16 @@ const IdPage = () => {
         if (endMinutes < startMinutes) {
             return currentMinutes >= startMinutes || currentMinutes <= endMinutes;
         }
-        
+
         return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     };
 
     const findMatchingUrlAndTitle = (jsonData, currentLocation, userLatLng, count) => {
+        // Use effectiveUserLatLng which prefers the React state but falls back
+        // to the last cached geolocation (if available). This avoids timing
+        // issues where the state update hasn't yet propagated but we have
+        // coordinates from the helper.
+        const effectiveUserLatLng = userLatLng || lastGeolocationRef.current || null;
         const dynamicArr = Array.isArray(jsonData?.dynamicData)
             ? jsonData.dynamicData
             : Array.isArray(jsonData?.data)
@@ -406,6 +380,8 @@ const IdPage = () => {
         }
 
         for (const item of dynamicArr) {
+            console.log(item.type, "ITEM");
+
             const details = item.data || item.details || {};
             if (item.type === 'Number of scans' && typeof count === 'number') {
                 const scanLimit = parseInt(details.scanNumber, 10);
@@ -424,35 +400,19 @@ const IdPage = () => {
                 }
             }
             if (item.type === 'Location' && currentLocation) {
-                console.log('🔍 Checking location match for:', {
-                    'Street Map API Location': currentLocation,
-                    'Response Data City': details.city,
-                    'Response Data State': details.state,
-                    'Response Data Country': details.country,
-                    'Full Item Details': details
-                });
-                
                 const clean = str => str ? str.replace(/[^\p{L}\p{N} ]+/gu, '').trim().toLowerCase() : '';
                 const currentLocClean = clean(currentLocation);
                 const responseCity = clean(details.city);
                 const responseState = clean(details.state);
                 const responseCountry = clean(details.country);
                 const responseStateDistrict = clean(details.state_district);
-                
-                console.log('🧹 Cleaned strings for comparison:', {
-                    'Street Map Location (cleaned)': currentLocClean,
-                    'Response City (cleaned)': responseCity,
-                    'Response State (cleaned)': responseState,
-                    'Response Country (cleaned)': responseCountry,
-                    'Response State District (cleaned)': responseStateDistrict
-                });
-                
+
                 let cityMatch = responseCity && (
-                    currentLocClean.includes(responseCity) || 
+                    currentLocClean.includes(responseCity) ||
                     responseCity.includes(currentLocClean) ||
                     currentLocClean === responseCity
                 );
-                
+
                 if (!cityMatch && responseCity && currentLocClean) {
                     const commonVariations = [
                         ['bengaluru', 'bangalore'],
@@ -462,7 +422,7 @@ const IdPage = () => {
                         ['pune', 'poona'],
                         ['kochi', 'cochin']
                     ];
-                    
+
                     for (const [name1, name2] of commonVariations) {
                         if ((responseCity === name1 && currentLocClean === name2) ||
                             (responseCity === name2 && currentLocClean === name1)) {
@@ -472,18 +432,7 @@ const IdPage = () => {
                         }
                     }
                 }
-                
-                console.log('🎯 Location matching results:', {
-                    'Raw Street Map Location': currentLocation,
-                    'Raw Response City': details.city,
-                    'Cleaned Street Map': currentLocClean,
-                    'Cleaned Response City': responseCity,
-                    cityMatch,
-                    'Direct includes check': currentLocClean.includes(responseCity),
-                    'Reverse includes check': responseCity.includes(currentLocClean),
-                    'Exact match check': currentLocClean === responseCity
-                });
-                
+
                 if (cityMatch && details.url) {
                     console.log('✅ CITY MATCH FOUND! URL:', details.url);
                     console.log('📍 Matched:', {
@@ -506,15 +455,19 @@ const IdPage = () => {
                     }
                 }
             }
-            if (item.type === 'Geo-fencing' && userLatLng) {
+            console.log(effectiveUserLatLng, "userLatLng (effective)");
+
+            if (item.type === 'Geo-fencing' && effectiveUserLatLng) {
                 const apiLat = parseFloat(details.latitude);
                 const apiLng = parseFloat(details.longitude);
-                const radius = parseFloat(details.radius);
+                const radius = parseInt(details.radius || details.radiusInMeter);
                 const url = details.url;
-                const userLat = userLatLng.lat;
-                const userLng = userLatLng.lng;
+                const userLat = effectiveUserLatLng.lat;
+                const userLng = effectiveUserLatLng.lng;
+                const distance = getDistanceFromLatLonInMeters(userLat, userLng, apiLat, apiLng);
+                console.log(distance,"distance");
                 if (!isNaN(apiLat) && !isNaN(apiLng) && !isNaN(radius) && userLat && userLng) {
-                    const distance = getDistanceFromLatLonInMeters(userLat, userLng, apiLat, apiLng);
+                    console.log(userLat, userLng, distance, "USER DATA");
                     if (distance <= radius) {
                         return {
                             url: url,
@@ -534,7 +487,7 @@ const IdPage = () => {
         setMobile(isMobile());
         if (sessionExpired) return;
         if (!id) return;
-        
+
         const fetchUrlData = async () => {
             try {
                 // Call the barcode API
@@ -542,7 +495,7 @@ const IdPage = () => {
                 const data = response.data;
                 setUrlData(data);
                 console.log(data, "Data");
-                
+
                 // Device detection
                 const userAgent = navigator.userAgent || navigator.vendor || window.opera;
                 let deviceType = '';
@@ -551,9 +504,7 @@ const IdPage = () => {
                 } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
                     deviceType = 'iPhone';
                 }
-                console.log('Detected deviceType:', deviceType);
 
-                // Device-based redirect
                 let redirectUrl = '';
                 if (data.jsonData && Array.isArray(data.jsonData.data)) {
                     const deviceObj = data.jsonData.data.find(
@@ -566,11 +517,6 @@ const IdPage = () => {
                 if (!redirectUrl) {
                     redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
                 }
-                console.log('Fetched URL data (redirect postponed):', redirectUrl);
-                // Do not redirect here. Redirection will happen only after
-                // the scan API (`/genbarcode/scan`) returns a response.
-                // Keep `loading` true so the asset image stays visible until
-                // the scan flow completes.
             } catch (error) {
                 console.error('Error fetching URL data:', error);
                 setLoading(false);
@@ -580,7 +526,7 @@ const IdPage = () => {
     }, [id, sessionExpired]);
 
     const [loadingImage, setLoadingImage] = useState(null);
-    
+
     // Timeout to ensure redirection doesn't hang indefinitely waiting for location
     useEffect(() => {
         if (locationRequired && !locationDataReady) {
@@ -588,7 +534,7 @@ const IdPage = () => {
                 console.log('⏰ Location data timeout - proceeding without location');
                 setLocationDataReady(true);
             }, 10000); // 10 second timeout
-            
+
             return () => clearTimeout(timeout);
         }
     }, [locationRequired, locationDataReady]);
@@ -607,35 +553,30 @@ const IdPage = () => {
 
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
-            // Prevent duplicate invocation which can cause repeated redirects/reloads
             if (scanSentRef.current) {
                 console.log('Scan/redirection already performed; skipping duplicate invocation.');
                 return;
             }
-            // Check if we have location-based routing requirements
             const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
             const data = response.data;
-            const hasLocationRouting = Array.isArray(data?.jsonData?.data) && 
-                                     data.jsonData.data.some(item => item.type === 'Location');
-            
-            // If location routing is required but location data is not ready, wait
+            const hasLocationRouting = Array.isArray(data?.jsonData?.data) &&
+                data.jsonData.data.some(item => item.type === 'Location');
+
             if (hasLocationRouting && !locationDataReady) {
                 console.log('🔄 Location routing required but location data not ready yet. Waiting...');
                 return;
             }
-            
-            console.log('✅ All required data ready. Proceeding with redirection logic...');
-            
+
             try {
                 const barcodeDetails = data?.jsonData?.data || {};
 
                 const payload = {
-                    barcodeDetails:{...barcodeDetails,...{barcodeImageUrl:data?.barcodeImageUrl,defaultURL:data?.defaultURL}},
-                    barcodeId:data?.id,
+                    barcodeDetails: { ...barcodeDetails, ...{ barcodeImageUrl: data?.barcodeImageUrl, defaultURL: data?.defaultURL } },
+                    barcodeId: data?.id,
                     userLatLng,
                     latitude: location?.lat ?? null,
                     longitude: location?.lng ?? null,
-                    deviceType:deviceType
+                    deviceType: deviceType
                 };
 
                 console.log('Prepared payload (will send scan):', payload);
@@ -670,7 +611,7 @@ const IdPage = () => {
                         console.log('Found device-specific URL for', detectedDeviceType + ':', redirectUrl);
                     }
                 }
-                
+
                 if (!redirectUrl) {
                     console.log('No device-specific URL found. Trying dynamic routing with:', {
                         currentLocation,
@@ -681,42 +622,26 @@ const IdPage = () => {
                     redirectUrl = dynamicResult.url;
                     console.log('Dynamic routing result:', dynamicResult);
                 }
-                
+
                 if (!redirectUrl) {
                     redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
                     console.log('Using default URL:', redirectUrl);
                 }
-                
+
                 if (redirectUrl) {
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
                     const logData = {
                         id: id,
                         finalUrl: finalUrl,
                         streetMapLocation: currentLocation,
-                        matchedCity: data.jsonData?.data?.find(item => 
+                        matchedCity: data.jsonData?.data?.find(item =>
                             item.type === 'Location' && item.details?.url === redirectUrl.replace('https://', '').replace('http://', '')
                         )?.details?.city || 'Unknown',
                         deviceType: detectedDeviceType,
                         userCoordinates: userLatLng,
                         source: 'redirection_success'
                     };
-                    
-                    console.log('🎯 REDIRECTION URL MATCHED!');
-                    console.log('📍 Final redirect URL:', finalUrl);
-                    console.log('🔍 URL Source: Device-specific or Dynamic routing');
-                    console.log('📊 Street Map Location (detected):', currentLocation);
-                    console.log('🏙️ Matched Location Data:', {
-                        'Street Map API Result': currentLocation,
-                        'Matched City from Response': logData.matchedCity,
-                        'Final URL': finalUrl
-                    });
-                    console.log('📱 Device Type:', detectedDeviceType);
-                    console.log('🌍 User Coordinates:', userLatLng);
-                    
-                    // Send log to server for PM2 monitoring
-                    // sendServerLog(logData);
-                    
-                    // Perform the actual redirection
+
                     window.location.replace(finalUrl);
                     return;
                 }
@@ -730,20 +655,10 @@ const IdPage = () => {
                     availableData: data.jsonData?.data,
                     source: 'no_redirection_match'
                 };
-                
-                console.log('❌ NO REDIRECTION URL MATCHED');
-                console.log('📍 Current Location:', currentLocation);
-                console.log('📱 Device Type:', detectedDeviceType);
-                console.log('🌍 User Coordinates:', userLatLng);
-                console.log('📋 Available data:', data.jsonData?.data);
-                
-                // Send log to server for PM2 monitoring
-                // sendServerLog(noMatchLogData);
-                
+
                 setShowDetails(true);
             } catch (error) {
                 console.error('Failed to send barcode details or redirect:', error);
-                // reveal page so user can see message / retry
                 setShowDetails(true);
                 alert('Error: ' + (error?.message || 'Something went wrong. Please try again.'));
             } finally {
@@ -767,7 +682,7 @@ const IdPage = () => {
             </div>
         );
     }
-    
+
     // Show location permission prompt if location is required but not available
     if (showLocationPrompt && locationRequired) {
         return (
@@ -779,11 +694,11 @@ const IdPage = () => {
                         This QR code uses location-based routing to show you the most relevant content for your area.
                     </p>
                     {error && (
-                        <div style={{ 
-                            background: '#ffe6e6', 
-                            color: '#d63031', 
-                            padding: '0.75rem', 
-                            borderRadius: '8px', 
+                        <div style={{
+                            background: '#ffe6e6',
+                            color: '#d63031',
+                            padding: '0.75rem',
+                            borderRadius: '8px',
                             marginBottom: '1rem',
                             fontSize: '14px'
                         }}>
@@ -795,31 +710,31 @@ const IdPage = () => {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-                    <button 
-                        style={{ 
-                            padding: '0.75rem 1.5rem', 
-                            background: '#1976d2', 
-                            color: '#fff', 
-                            border: 'none', 
-                            borderRadius: '8px', 
+                    <button
+                        style={{
+                            padding: '0.75rem 1.5rem',
+                            background: '#1976d2',
+                            color: '#fff',
+                            border: 'none',
+                            borderRadius: '8px',
                             cursor: 'pointer',
                             fontSize: '16px',
                             fontWeight: 'bold'
-                        }} 
+                        }}
                         onClick={requestLocationPermission}
                     >
                         Allow Location Access
                     </button>
-                    <button 
-                        style={{ 
-                            padding: '0.75rem 1.5rem', 
-                            background: '#fff', 
-                            color: '#1976d2', 
-                            border: '2px solid #1976d2', 
-                            borderRadius: '8px', 
+                    <button
+                        style={{
+                            padding: '0.75rem 1.5rem',
+                            background: '#fff',
+                            color: '#1976d2',
+                            border: '2px solid #1976d2',
+                            borderRadius: '8px',
                             cursor: 'pointer',
                             fontSize: '16px'
-                        }} 
+                        }}
                         onClick={() => {
                             setShowLocationPrompt(false);
                             setShowDetails(true);
@@ -832,7 +747,7 @@ const IdPage = () => {
             </div>
         );
     }
-    
+
     if (loading || !showDetails) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
@@ -877,10 +792,10 @@ const IdPage = () => {
                         <div style={mobileStyles.card}>
                             <div style={mobileStyles.cardHeader}>URL</div>
                             <div style={mobileStyles.cardContent}>
-                                <a href={displayUrl.startsWith('http') ? displayUrl : `https://${displayUrl}`} 
-                                   target="_blank" 
-                                   rel="noopener noreferrer" 
-                                   style={mobileStyles.link}>
+                                <a href={displayUrl.startsWith('http') ? displayUrl : `https://${displayUrl}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={mobileStyles.link}>
                                     {displayUrl}
                                 </a>
                             </div>
@@ -900,7 +815,7 @@ const IdPage = () => {
                         </div>
                     </div>
                 </div>
-                
+
                 <footer style={{
                     width: '100%',
                     textAlign: 'center',
@@ -942,10 +857,10 @@ const IdPage = () => {
                         <div style={desktopStyles.card}>
                             <div style={desktopStyles.cardHeader}>URL</div>
                             <div style={desktopStyles.cardContent}>
-                                <a href={displayUrl.startsWith('http') ? displayUrl : `https://${displayUrl}`} 
-                                   target="_blank" 
-                                   rel="noopener noreferrer" 
-                                   style={desktopStyles.link}>
+                                <a href={displayUrl.startsWith('http') ? displayUrl : `https://${displayUrl}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={desktopStyles.link}>
                                     {displayUrl}
                                 </a>
                             </div>
@@ -965,7 +880,7 @@ const IdPage = () => {
                         </div>
                     </div>
                 </div>
-                
+
                 <footer style={{
                     width: '100%',
                     textAlign: 'center',
