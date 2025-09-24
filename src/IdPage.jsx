@@ -688,45 +688,7 @@ const IdPage = () => {
                 }
                 
                 if (redirectUrl) {
-                    // If routing contains Location/Geo-fencing rules but we don't
-                    // have user coordinates, avoid redirecting to the default
-                    // URL (which can be the same as the current page) because
-                    // that produces a reload loop. Show details instead.
-                    const requiresLocationRouting = Array.isArray(data?.jsonData?.data) &&
-                        data.jsonData.data.some(item => item.type === 'Location' || item.type === 'Geo-fencing');
-                    const defaultUrlCandidate = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
-                    if (requiresLocationRouting && !userLatLng && defaultUrlCandidate && (redirectUrl === defaultUrlCandidate)) {
-                        console.log('Skipping redirect because location is required but not available. Showing details instead.');
-                        setShowDetails(true);
-                        sendServerLog({ id, source: 'skipped_no_location', streetMapLocation: currentLocation, availableData: data.jsonData?.data });
-                        return;
-                    }
                     const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
-                    // Prevent self-redirect loops: if the final URL is the same
-                    // as the current page, don't redirect (this caused repeated
-                    // refreshes when defaultURL pointed back to the same id URL).
-                    try {
-                        const normalize = (u) => {
-                            try {
-                                const url = new URL(u);
-                                return (url.origin + url.pathname).replace(/\/+$/g, '');
-                            } catch (e) {
-                                return (u || '').replace(/\/+$/g, '');
-                            }
-                        };
-                        const current = normalize(window.location.href);
-                        const target = normalize(finalUrl);
-                        if (current === target) {
-                            console.log('Skipping self-redirect to the same URL:', finalUrl);
-                            setShowDetails(true);
-                            // still send server log but avoid location.replace
-                            sendServerLog({ ...logData, note: 'skipped_self_redirect' });
-                            return;
-                        }
-                    } catch (e) {
-                        // If any failure in comparison, fall back to safe redirect below
-                        console.warn('Error checking self-redirect:', e);
-                    }
                     const logData = {
                         id: id,
                         finalUrl: finalUrl,
