@@ -47,6 +47,21 @@ const IdPage = () => {
     const [locationRequired, setLocationRequired] = useState(false);
     const [dataLoaded, setDataLoaded] = useState(false);
     const [locationDataReady, setLocationDataReady] = useState(false);
+    const [ip, setIp] = useState("");
+
+  useEffect(() => {
+    const fetchIP = async () => {
+      try {
+        const response = await fetch("https://api.ipify.org?format=json");
+        const data = await response.json();
+        setIp(data.ip);
+      } catch (err) {
+        console.error("Failed to fetch IP:", err);
+      }
+    };
+
+    fetchIP();
+  }, []);
 
       useEffect(() => {
         getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
