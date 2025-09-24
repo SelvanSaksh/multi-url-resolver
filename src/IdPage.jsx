@@ -106,16 +106,17 @@ const IdPage = () => {
   }, []);
    
     useEffect(() => {
-        if (performance.getEntriesByType('navigation')[0]?.type === 'reload') {
-            setShowWarning(true);
-            setSessionExpired(true);
-            return;
-        }
-        if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) {
-            setShowWarning(true);
-            setSessionExpired(true);
-            return;
-        }
+        // Refresh validation (commented as requested)
+        // if (performance.getEntriesByType('navigation')[0]?.type === 'reload') {
+        //     setShowWarning(true);
+        //     setSessionExpired(true);
+        //     return;
+        // }
+        // if (window.performance && window.performance.navigation && window.performance.navigation.type === 1) {
+        //     setShowWarning(true);
+        //     setSessionExpired(true);
+        //     return;
+        // }
         // Session flag
         if (!sessionStorage.getItem('visited')) {
             sessionStorage.setItem('visited', 'true');
