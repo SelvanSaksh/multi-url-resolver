@@ -55,6 +55,7 @@ const IdPage = () => {
     const queryString = window.location.search;
     const queryParams = new URLSearchParams(queryString);
     const [currentLocation, setCurrentLocation] = useState(queryParams.get('curlocation') || '');
+    const currentLocationAutoSetRef = useRef(false);
     const [location, setLocation] = useState({ lat: null, lng: null });
     const [deviceType, setDeviceType] = useState("Unknown");
     const [error, setError] = useState(null);
@@ -80,30 +81,18 @@ const IdPage = () => {
 
 
 
-     useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-          console.log("Location fetched:", position.coords);
-        },
-        (err) => {
-          console.error("Geolocation error:", err);
-          setError(err.message);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,          
-          maximumAge: 0,          
-        }
-      );
-    } else {
-      setError("Geolocation is not supported by this browser.");
-    }
-  }, []);
+         useEffect(() => {
+                // Use the shared geolocation helper to avoid multiple prompts
+                getGeolocation({ enableHighAccuracy: true, timeout: 10000, maximumAge: 0 })
+                        .then(coords => {
+                                setLocation({ lat: coords.lat, lng: coords.lng });
+                                console.log('Location fetched (cached):', coords);
+                        })
+                        .catch(err => {
+                                console.error('Geolocation error:', err);
+                                setError(err.message || String(err));
+                        });
+        }, []);
    
     useEffect(() => {
         // Refresh validation (commented as requested)
@@ -153,11 +142,11 @@ const IdPage = () => {
                             });
                         }
                         
-                        navigator.geolocation.getCurrentPosition(
-                            async (position) => {
-                                console.log('✅ Location access granted');
+                        getGeolocation()
+                            .then(async (coords) => {
+                                console.log('✅ Location access granted (cached helper)');
                                 setShowLocationPrompt(false);
-                                const { latitude, longitude } = position.coords;
+                                const { lat: latitude, lng: longitude } = coords;
                                 setUserLatLng({ lat: latitude, lng: longitude });
 
                                 if (!currentLocation) {
@@ -173,7 +162,10 @@ const IdPage = () => {
                                                             locData.address.state || 
                                                             '';
                                         
-                                        setCurrentLocation(detectedCity);
+                                        if (!currentLocationAutoSetRef.current) {
+                                            setCurrentLocation(detectedCity);
+                                            currentLocationAutoSetRef.current = true;
+                                        }
                                         console.log('🏙️ Detected City/Location from Street Map API:', detectedCity);
                                         console.log('📋 Address breakdown:', {
                                             city: locData.address.city,
@@ -212,9 +204,9 @@ const IdPage = () => {
                                     console.warn('Required data is missing. Skipping API call.');
                                 }
                             },
-                            async (error) => {
-                                console.error('🚫 Geolocation error:', error);
-                                console.log('📍 Location required but access failed');
+                            (error) => {
+                                console.error('🚫 Geolocation error (helper):', error);
+                                console.log('📍 Location required but access failed (helper)');
                                 
                                 // Show location prompt for permission-related errors
                                 if (error.code === error.PERMISSION_DENIED) {
@@ -235,8 +227,9 @@ const IdPage = () => {
                                 setLocationDataReady(true);
                                 
                                 try {
-                                    const { logErrorToTetr } = await import('./api');
-                                    logErrorToTetr(error, { source: 'geolocation', id });
+                                    import('./api').then(({ logErrorToTetr }) => {
+                                        try { logErrorToTetr(error, { source: 'geolocation', id }); } catch (e) {}
+                                    }).catch(() => {});
                                 } catch (e) {}
                             },
                             {
@@ -287,6 +280,44 @@ const IdPage = () => {
     const [userLatLng, setUserLatLng] = useState(null);
     // Guard ref to ensure the scan/redirection flow runs only once
     const scanSentRef = useRef(false);
+    // Geolocation caching to avoid multiple prompts / duplicate requests
+    const geolocationPromiseRef = useRef(null);
+    const lastGeolocationRef = useRef(null);
+
+    const getGeolocation = (options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }) => {
+        if (lastGeolocationRef.current) {
+            return Promise.resolve(lastGeolocationRef.current);
+        }
+        if (geolocationPromiseRef.current) {
+            return geolocationPromiseRef.current;
+        }
+        if (!navigator.geolocation) {
+            return Promise.reject(new Error('Geolocation is not supported by this browser.'));
+        }
+
+        geolocationPromiseRef.current = new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
+                    lastGeolocationRef.current = coords;
+                    resolve(coords);
+                },
+                (err) => {
+                    reject(err);
+                },
+                options
+            );
+        }).finally(() => {
+            geolocationPromiseRef.current = null;
+        });
+
+        return geolocationPromiseRef.current;
+    };
+
+    // Reset scan guard when `id` changes so new barcode IDs can trigger the flow again
+    useEffect(() => {
+        scanSentRef.current = false;
+    }, [id]);
     
     const requestLocationPermission = () => {
         console.log('🔄 Requesting location permission...');
@@ -294,13 +325,13 @@ const IdPage = () => {
         setError(null);
         
         if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                async (position) => {
-                    console.log('✅ Location permission granted');
-                    const { latitude, longitude } = position.coords;
+            getGeolocation()
+                .then(async (coords) => {
+                    console.log('✅ Location permission granted (helper)');
+                    const { lat: latitude, lng: longitude } = coords;
                     setUserLatLng({ lat: latitude, lng: longitude });
                     setLocation({ lat: latitude, lng: longitude });
-                    
+
                     // Get city name from coordinates
                     try {
                         const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
@@ -310,27 +341,27 @@ const IdPage = () => {
                                             locData.address.village || 
                                             locData.address.state_district || 
                                             locData.address.state || '';
-                        setCurrentLocation(detectedCity);
+                        if (!currentLocationAutoSetRef.current) {
+                            setCurrentLocation(detectedCity);
+                            currentLocationAutoSetRef.current = true;
+                        }
                         console.log('🏙️ Location detected:', detectedCity);
                     } catch (err) {
-                        setCurrentLocation(`${latitude},${longitude}`);
+                        if (!currentLocationAutoSetRef.current) {
+                            setCurrentLocation(`${latitude},${longitude}`);
+                            currentLocationAutoSetRef.current = true;
+                        }
                     }
-                },
-                (error) => {
-                    console.error('🚫 Location permission denied again:', error);
+                })
+                .catch((error) => {
+                    console.error('🚫 Location permission denied again (helper):', error);
                     setShowLocationPrompt(true);
                     if (error.code === error.PERMISSION_DENIED) {
                         setError('Location access is required for location-based routing. Please enable location in your browser settings.');
                     } else {
                         setError('Unable to access location. Please check your location settings and try again.');
                     }
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 15000,
-                    maximumAge: 60000
-                }
-            );
+                });
         } else {
             setError('Geolocation is not supported by this browser.');
         }
