@@ -180,6 +180,7 @@ const IdPage = () => {
                                         barcode_details: data.jsonData.barcodeDetails,
                                         latitude: latitude || null,
                                         longitude: longitude || null,
+                                        ipAddress: ip || null,
                                     };
 
                                     const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
@@ -239,6 +240,7 @@ const IdPage = () => {
                             barcode_details: data.jsonData.barcodeDetails,
                             latitude: null,
                             longitude: null,
+                            ipAddress: ip || null,
                         };
 
                         const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
@@ -628,7 +630,8 @@ const IdPage = () => {
                     userLatLng,
                     latitude: location?.lat ?? null,
                     longitude: location?.lng ?? null,
-                    deviceType: deviceType
+                    deviceType: deviceType,
+                    ipAddress: ip || null,
                 };
 
                 console.log('Prepared payload (will send scan):', payload);
