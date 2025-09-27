@@ -454,45 +454,8 @@ const IdPage = () => {
                 }
             }
             if (item.type === 'Location' && currentLocation) {
-                const clean = str => str ? str.replace(/[^\p{L}\p{N} ]+/gu, '').trim().toLowerCase() : '';
-                const currentLocClean = clean(currentLocation);
-                const responseCity = clean(details.city);
-                const responseState = clean(details.state);
-                const responseCountry = clean(details.country);
-                const responseStateDistrict = clean(details.state_district);
-
-                let cityMatch = responseCity && (
-                    currentLocClean.includes(responseCity) ||
-                    responseCity.includes(currentLocClean) ||
-                    currentLocClean === responseCity
-                );
-
-                if (!cityMatch && responseCity && currentLocClean) {
-                    const commonVariations = [
-                        ['bengaluru', 'bangalore'],
-                        ['mumbai', 'bombay'],
-                        ['kolkata', 'calcutta'],
-                        ['chennai', 'madras'],
-                        ['pune', 'poona'],
-                        ['kochi', 'cochin']
-                    ];
-
-                    for (const [name1, name2] of commonVariations) {
-                        if ((responseCity === name1 && currentLocClean === name2) ||
-                            (responseCity === name2 && currentLocClean === name1)) {
-                            cityMatch = true;
-                            console.log('🔄 Found city variation match:', currentLocClean, '↔', responseCity);
-                            break;
-                        }
-                    }
-                }
-
-                if (cityMatch && details.url) {
-                    console.log('✅ CITY MATCH FOUND! URL:', details.url);
-                    console.log('📍 Matched:', {
-                        'Street Map Location': currentLocation,
-                        'Response City': details.city
-                    });
+                console.log(currentLocation,"currentLocation");
+                if (details.url) {
                     return {
                         url: details.url,
                         title: item.title || jsonData?.title || '',
