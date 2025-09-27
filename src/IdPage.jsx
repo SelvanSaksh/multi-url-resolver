@@ -174,25 +174,25 @@ const IdPage = () => {
                                 }
 
                                 // Ensure all required data is available before making the API call
-                                if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
-                                    const payload = {
-                                        barcode_id: data.jsonData.barcodeDetails.id,
-                                        barcode_details: data.jsonData.barcodeDetails,
-                                        latitude: latitude || null,
-                                        longitude: longitude || null,
-                                        ipAddress: ip || null,
-                                    };
+                                // if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
+                                //     const payload = {
+                                //         barcode_id: data.jsonData.barcodeDetails.id,
+                                //         barcode_details: data.jsonData.barcodeDetails,
+                                //         latitude: latitude || null,
+                                //         longitude: longitude || null,
+                                //         ipAddress: ip || null,
+                                //     };
 
-                                    const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
-                                    try {
-                                        const scanResponse = await api.post(scanUrl, payload);
-                                        console.log('Scan details sent successfully:', scanResponse.data);
-                                    } catch (error) {
-                                        console.error('Failed to send scan details:', error);
-                                    }
-                                } else {
-                                    console.warn('Required data is missing. Skipping API call.');
-                                }
+                                //     const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
+                                //     try {
+                                //         const scanResponse = await api.post(scanUrl, payload);
+                                //         console.log('Scan details sent successfully:', scanResponse.data);
+                                //     } catch (error) {
+                                //         console.error('Failed to send scan details:', error);
+                                //     }
+                                // } else {
+                                //     console.warn('Required data is missing. Skipping API call.');
+                                // }
                             },
                                 (error) => {
                                     console.error('🚫 Geolocation error (helper):', error);
@@ -234,25 +234,25 @@ const IdPage = () => {
                     console.log('📍 No location-based routing required');
                     setLocationDataReady(true);
 
-                    if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
-                        const payload = {
-                            barcode_id: data.jsonData.barcodeDetails.id,
-                            barcode_details: data.jsonData.barcodeDetails,
-                            latitude: null,
-                            longitude: null,
-                            ipAddress: ip || null,
-                        };
+                    // if (data?.jsonData?.barcodeDetails && data?.jsonData?.barcodeDetails?.id) {
+                    //     const payload = {
+                    //         barcode_id: data.jsonData.barcodeDetails.id,
+                    //         barcode_details: data.jsonData.barcodeDetails,
+                    //         latitude: null,
+                    //         longitude: null,
+                    //         ipAddress: ip || null,
+                    //     };
 
-                        const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
-                        try {
-                            const scanResponse = await api.post(scanUrl, payload);
-                            console.log('Scan details sent successfully:', scanResponse.data);
-                        } catch (error) {
-                            console.error('Failed to send scan details:', error);
-                        }
-                    } else {
-                        console.warn('Required data is missing. Skipping API call.');
-                    }
+                    //     const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
+                    //     try {
+                    //         const scanResponse = await api.post(scanUrl, payload);
+                    //         console.log('Scan details sent successfully:', scanResponse.data);
+                    //     } catch (error) {
+                    //         console.error('Failed to send scan details:', error);
+                    //     }
+                    // } else {
+                    //     console.warn('Required data is missing. Skipping API call.');
+                    // }
                 }
             } catch (error) {
                 console.error('Error fetching barcode details:', error);
@@ -607,8 +607,9 @@ const IdPage = () => {
 
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
+            console.log('fetchAndSendBarcodeDetails called', { id, scanSent: scanSentRef.current, locationDataReady, userLatLng, currentLocation });
             if (scanSentRef.current) {
-                console.log('Scan/redirection already performed; skipping duplicate invocation.');
+                console.log('Early return: scan already sent (scanSentRef.current = true)');
                 return;
             }
             const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
@@ -617,13 +618,12 @@ const IdPage = () => {
                 data.jsonData.data.some(item => item.type === 'Location');
 
             if (hasLocationRouting && !locationDataReady) {
-                console.log('🔄 Location routing required but location data not ready yet. Waiting...');
+                console.log('Early return: location routing required but locationDataReady =', locationDataReady);
                 return;
             }
 
             try {
                 const barcodeDetails = data?.jsonData?.data || {};
-
                 const payload = {
                     barcodeDetails: { ...barcodeDetails, ...{ barcodeImageUrl: data?.barcodeImageUrl, defaultURL: data?.defaultURL } },
                     barcodeId: data?.id,
@@ -639,11 +639,9 @@ const IdPage = () => {
                 setLoading(true);
 
                 const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
-                const scanResponse = await api.post(scanUrl, payload);
                 // Mark that we have sent the scan to avoid duplicate sends
                 scanSentRef.current = true;
 
-                console.log('Scan details sent successfully:', scanResponse.data);
 
                 // Device detection for redirect
                 const userAgent = navigator.userAgent || navigator.vendor || window.opera;
@@ -720,6 +718,11 @@ const IdPage = () => {
                         userCoordinates: userLatLng,
                         source: 'redirection_success'
                     };
+                    if (payload?.latitude) {
+                        const scanResponse = await api.post(scanUrl, payload);
+                        console.log('Scan details sent successfully:', scanResponse.data);
+
+                    }
                     window.location.replace(finalUrl);
                     return;
                 }
@@ -747,7 +750,7 @@ const IdPage = () => {
         if (id) {
             fetchAndSendBarcodeDetails();
         }
-    }, [id, userLatLng, currentLocation, deviceType, locationDataReady]);
+    }, [location.lat != null]);
 
     if (sessionExpired) {
         return (
