@@ -827,14 +827,20 @@ const IdPage = () => {
 
                     await api.post(scanUrl, payload);
                     console.log("Scan details sent successfully");
-                    window.location.replace(finalUrl);
+                    
+                    // Small delay to ensure loading screen is visible and API call completes
+                    // This gives users time to see the feature image before redirect
+                    setTimeout(() => {
+                        console.log("Redirecting to:", finalUrl);
+                        window.location.replace(finalUrl);
+                    }, 500); // 500ms delay to show the loading screen
                 } else {
                     setShowDetails(true);
+                    setLoading(false);
                 }
             } catch (error) {
                 console.error("Failed to send barcode details or redirect:", error);
                 setShowDetails(true);
-            } finally {
                 setLoading(false);
             }
         };
@@ -929,7 +935,28 @@ const IdPage = () => {
     if (loading || !showDetails) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
-                {loadingImage && <img src={loadingImage} alt="Loading" style={{ maxWidth: '100%', height: 'auto' }} />}
+                {loadingImage && (
+                    <div style={{ textAlign: 'center' }}>
+                        <img src={loadingImage} alt="Loading" style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px' }} />
+                        <div style={{ 
+                            color: '#1976d2', 
+                            fontSize: '18px', 
+                            fontWeight: 'bold',
+                            marginBottom: '10px'
+                        }}>
+                            Processing QR Code...
+                        </div>
+                        <div style={{ 
+                            color: '#666', 
+                            fontSize: '14px',
+                            maxWidth: '300px',
+                            margin: '0 auto',
+                            lineHeight: '1.4'
+                        }}>
+                            {locationRequired ? 'Collecting location data for personalized content...' : 'Analyzing QR code data...'}
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
