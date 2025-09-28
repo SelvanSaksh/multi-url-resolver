@@ -68,32 +68,24 @@ const IdPage = () => {
         try {
             const response = await fetch("https://api.ipify.org?format=json");
             const data = await response.json();
-            setIp(data.ip, "IPIPIP");
+            setIp(data.ip);
+            console.log('🌐 IP address fetched:', data.ip);
         } catch (err) {
             console.error("Failed to fetch IP:", err);
         }
     };
     const getLocationCoordinates = async () => {
-        await getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
-            .then(coords => {
-                setLocation({ lat: coords.lat, lng: coords.lng });
-                setUserLatLng({ lat: coords.lat, lng: coords.lng });
-                console.log('Location fetched (cached):', coords);
-            })
-            .catch(err => {
-                console.error('Geolocation error:', err);
-                const code = err && err.code;
-                if (code === 1) {
-                    setShowLocationPrompt(true);
-                    setError('Location access denied. Please enable location services to use location-based routing.');
-                } else {
-                    setError(err.message || String(err));
-                }
-            });
+        // Don't auto-fetch location on load - wait for user permission
+        // This prevents early redirection before user can grant access
+        console.log('🔄 Location coordinates will be fetched when user grants permission');
     }
 
     useEffect(() => {
-        getLocationCoordinates()
+        // Don't automatically get location on load - let it be triggered by user permission
+        // getLocationCoordinates()
+        
+        // Fetch IP address early (this doesn't require user permission)
+        fetchIP();
     }, []);
 
     useEffect(() => {
@@ -125,13 +117,14 @@ const IdPage = () => {
                 const allData = response.data;
 
                 const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
+                const hasGeoFencing = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Geo-fencing');
 
-                if (hasLocationType) {
+                if (hasLocationType || hasGeoFencing) {
                     setLocationRequired(true);
-                    console.log('📍 Location-based routing detected in data');
+                    console.log('📍 Location-based routing or geo-fencing detected in data');
                 }
 
-                if (hasLocationType && (!currentLocation || !userLatLng)) {
+                if ((hasLocationType || hasGeoFencing) && (!currentLocation || !userLatLng)) {
                     if (navigator.geolocation) {
                         // Check location permission first
                         if (navigator.permissions) {
@@ -140,7 +133,7 @@ const IdPage = () => {
                                 if (result.state === 'denied') {
                                     console.log('❌ Location permission denied');
                                     setShowLocationPrompt(true);
-                                    setError('Location access is required for location-based routing but permission was denied.');
+                                    setError('Location access is required for location-based routing or geo-fencing but permission was denied.');
                                     return;
                                 }
                             });
@@ -309,22 +302,32 @@ const IdPage = () => {
 
         try {
             const coords = await getGeolocation();
+            console.log('✅ Location permission granted:', coords);
             setUserLatLng(coords);
             setLocation(coords);
-            setLocationDataReady(true); // only now mark ready
-
+            
             // Optionally get city name
             try {
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}`);
                 const locData = await res.json();
-                setCurrentLocation(locData.address.city || locData.address.town || coords.lat + ',' + coords.lng);
+                const detectedCity = locData.address.city || 
+                                   locData.address.town || 
+                                   locData.address.village ||
+                                   coords.lat + ',' + coords.lng;
+                setCurrentLocation(detectedCity);
+                console.log('🗺️ Location name resolved:', detectedCity);
             } catch {
                 setCurrentLocation(`${coords.lat},${coords.lng}`);
             }
 
+            // Mark location data as ready AFTER everything is set
+            setLocationDataReady(true);
+            console.log('✅ Location data ready - proceeding with redirection logic');
+
         } catch (error) {
             console.error("User denied location:", error);
-            setLocationDataReady(true); // mark ready so redirection can handle fallback
+            // Even if location is denied, mark as ready so app can proceed without location
+            setLocationDataReady(true); 
             setShowLocationPrompt(true);
             setError('Location access is required for location-based routing. Please enable location to continue.');
         }
@@ -490,17 +493,7 @@ const IdPage = () => {
 
     const [loadingImage, setLoadingImage] = useState(null);
 
-    // Timeout to ensure redirection doesn't hang indefinitely waiting for location
-    useEffect(() => {
-        if (locationRequired && !locationDataReady) {
-            const timeout = setTimeout(() => {
-                console.log('⏰ Location data timeout - proceeding without location');
-                setLocationDataReady(true);
-            }, 10000); // 10 second timeout
 
-            return () => clearTimeout(timeout);
-        }
-    }, [locationRequired, locationDataReady]);
 
     useEffect(() => {
         const images = [
@@ -524,6 +517,7 @@ const IdPage = () => {
                 locationDataReady,
                 userLatLng,
                 currentLocation,
+                locationRequired
             });
 
             // Prevent duplicate calls
@@ -535,25 +529,38 @@ const IdPage = () => {
                 const hasLocationRouting =
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Location");
+                
+                const hasGeoFencing = 
+                    Array.isArray(data?.jsonData?.data) &&
+                    data.jsonData.data.some(item => item.type === "Geo-fencing");
+
+                // Critical fix: Wait for location data to be ready if geo-fencing is required
+                if (hasGeoFencing && !locationDataReady) {
+                    console.log("⏳ Geo-fencing detected but location not ready yet. Waiting for user permission...");
+                    return;
+                }
+
+                // Also wait for location routing if required
+                if (hasLocationRouting && !locationDataReady) {
+                    console.log("⏳ Location routing detected but location not ready yet. Waiting...");
+                    return;
+                }
+
                 const ipAddress = await fetch("https://api.ipify.org?format=json")
                     .then(res => res.json())
                     .then(json => json.ip)
                     .catch(() => null);
 
-                // Wait until location is ready if required
-                if (hasLocationRouting && !locationDataReady) return;
                 const userAgent = navigator.userAgent || navigator.vendor || window.opera;
                 let deviceType = "";
                 if (/android/i.test(userAgent)) deviceType = "Android";
                 else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) deviceType = "iPhone";
                 else deviceType = "Desktop";
 
-
                 // Lock further runs
                 scanSentRef.current = true;
                 const effectiveLat = userLatLng?.lat ?? currentLocation?.lat ?? lastGeolocationRef.current?.lat ?? null;
                 const effectiveLng = userLatLng?.lng ?? currentLocation?.lng ?? lastGeolocationRef.current?.lng ?? null;
-
 
                 const barcodeDetails = data?.jsonData?.data || {};
                 const payload = {
@@ -576,7 +583,6 @@ const IdPage = () => {
 
                 const scanUrl = "https://tandt.api.sakksh.com/genbarcode/scan";
 
-
                 let redirectUrl = "";
 
                 // Check for device-specific rule
@@ -584,7 +590,7 @@ const IdPage = () => {
                     const deviceObj = data.jsonData.data.find(
                         item =>
                             item.type === "Device" &&
-                            item.details?.deviceType === detectedDeviceType
+                            item.details?.deviceType === deviceType
                     );
                     if (deviceObj?.details?.url) {
                         redirectUrl = deviceObj.details.url;
@@ -593,18 +599,13 @@ const IdPage = () => {
 
                 // If no device URL → check dynamic routing
                 if (!redirectUrl) {
-                    const dynamicResult = findMatchingUrlAndTitle(
+                    const dynamicResult = await findMatchingUrlAndTitle(
                         data.jsonData,
                         currentLocation,
                         userLatLng
                     );
                     redirectUrl = dynamicResult.url;
                     console.log("Dynamic routing result:", dynamicResult);
-                }
-
-                if (locationRequired && !locationDataReady) {
-                    console.log("⏳ Location not ready yet. Pausing redirection.");
-                    return; // do not redirect yet
                 }
 
                 // Fallback to default
@@ -624,7 +625,7 @@ const IdPage = () => {
 
                     await api.post(scanUrl, payload);
                     console.log("Scan details sent successfully");
-                    window.location.replace(finalUrl);
+                    // window.location.replace(finalUrl);
                 } else {
                     setShowDetails(true);
                 }
@@ -710,12 +711,13 @@ const IdPage = () => {
                             fontSize: '16px'
                         }}
                         onClick={() => {
+                            console.log('🚫 User chose to continue without location');
                             setShowLocationPrompt(false);
-                            setShowDetails(true);
-                            setLoading(false);
+                            setLocationDataReady(true); // Mark as ready so redirection can proceed
+                            setError(null);
                         }}
                     >
-                        Use Default Content
+                        Continue Without Location
                     </button>
                 </div>
             </div>
