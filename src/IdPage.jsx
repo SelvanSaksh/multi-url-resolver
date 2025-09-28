@@ -118,13 +118,19 @@ const IdPage = () => {
 
                 const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
                 const hasGeoFencing = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Geo-fencing');
+                const hasTimeRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Time');
 
                 if (hasLocationType || hasGeoFencing) {
                     setLocationRequired(true);
                     console.log('📍 Location-based routing or geo-fencing detected in data');
                 }
+                
+                // For time-based routing, try to collect location data for analytics but don't require it
+                if (hasTimeRouting && !hasLocationType && !hasGeoFencing) {
+                    console.log('⏰ Time-based routing detected - will collect location if available for analytics');
+                }
 
-                if ((hasLocationType || hasGeoFencing) && (!currentLocation || !userLatLng)) {
+                if ((hasLocationType || hasGeoFencing || hasTimeRouting) && (!currentLocation || !userLatLng)) {
                     if (navigator.geolocation) {
                         // Check location permission first
                         if (navigator.permissions) {
@@ -534,6 +540,10 @@ const IdPage = () => {
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Geo-fencing");
 
+                const hasTimeRouting = 
+                    Array.isArray(data?.jsonData?.data) &&
+                    data.jsonData.data.some(item => item.type === "Time");
+
                 // Critical fix: Wait for location data to be ready if geo-fencing is required
                 if (hasGeoFencing && !locationDataReady) {
                     console.log("⏳ Geo-fencing detected but location not ready yet. Waiting for user permission...");
@@ -543,6 +553,13 @@ const IdPage = () => {
                 // Also wait for location routing if required
                 if (hasLocationRouting && !locationDataReady) {
                     console.log("⏳ Location routing detected but location not ready yet. Waiting...");
+                    return;
+                }
+
+                // For time-based routing, we still want to collect location data if available for analytics
+                // but don't block the API call if location isn't ready
+                if (hasTimeRouting && (hasLocationRouting || hasGeoFencing) && !locationDataReady) {
+                    console.log("⏳ Time routing with location features detected but location not ready. Waiting...");
                     return;
                 }
 
@@ -559,8 +576,37 @@ const IdPage = () => {
 
                 // Lock further runs
                 scanSentRef.current = true;
-                const effectiveLat = userLatLng?.lat ?? currentLocation?.lat ?? lastGeolocationRef.current?.lat ?? null;
-                const effectiveLng = userLatLng?.lng ?? currentLocation?.lng ?? lastGeolocationRef.current?.lng ?? null;
+                
+                // Get the most reliable location data available
+                let effectiveLat = null;
+                let effectiveLng = null;
+                let effectiveUserLatLng = null;
+
+                // Priority: userLatLng > lastGeolocationRef > currentLocation coordinates
+                if (userLatLng?.lat && userLatLng?.lng) {
+                    effectiveLat = userLatLng.lat;
+                    effectiveLng = userLatLng.lng;
+                    effectiveUserLatLng = userLatLng;
+                } else if (lastGeolocationRef.current?.lat && lastGeolocationRef.current?.lng) {
+                    effectiveLat = lastGeolocationRef.current.lat;
+                    effectiveLng = lastGeolocationRef.current.lng;
+                    effectiveUserLatLng = lastGeolocationRef.current;
+                } else if (location?.lat && location?.lng) {
+                    effectiveLat = location.lat;
+                    effectiveLng = location.lng;
+                    effectiveUserLatLng = location;
+                }
+
+                console.log("Location data for API:", {
+                    effectiveLat,
+                    effectiveLng,
+                    effectiveUserLatLng,
+                    userLatLng,
+                    lastGeolocation: lastGeolocationRef.current,
+                    hasTimeRouting,
+                    hasLocationRouting,
+                    hasGeoFencing
+                });
 
                 const barcodeDetails = data?.jsonData?.data || {};
                 const payload = {
@@ -570,8 +616,8 @@ const IdPage = () => {
                         defaultURL: data?.defaultURL,
                     },
                     barcodeId: data?.id,
-                    userLatLng,
-                    latitude: effectiveLat,  // <-- use effectiveLat here
+                    userLatLng: effectiveUserLatLng,
+                    latitude: effectiveLat,
                     longitude: effectiveLng,
                     deviceType: deviceType,
                     ipAddress: ipAddress || null,
@@ -602,7 +648,7 @@ const IdPage = () => {
                     const dynamicResult = await findMatchingUrlAndTitle(
                         data.jsonData,
                         currentLocation,
-                        userLatLng
+                        effectiveUserLatLng || userLatLng
                     );
                     redirectUrl = dynamicResult.url;
                     console.log("Dynamic routing result:", dynamicResult);
