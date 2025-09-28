@@ -827,7 +827,7 @@ const IdPage = () => {
 
                     await api.post(scanUrl, payload);
                     console.log("Scan details sent successfully");
-                    // window.location.replace(finalUrl);
+                    window.location.replace(finalUrl);
                 } else {
                     setShowDetails(true);
                 }
