@@ -135,22 +135,46 @@ const IdPage = () => {
                         // Check location permission first
                         if (navigator.permissions) {
                             navigator.permissions.query({ name: 'geolocation' }).then(function (result) {
-                                console.log('📍 Location permission status:', result.state);
+                                console.log('📍 Location permission status:', result.state, 'isMobile:', isMobile());
                                 if (result.state === 'denied') {
                                     console.log('❌ Location permission denied');
                                     setShowLocationPrompt(true);
                                     setError('Location access is required for location-based routing or geo-fencing but permission was denied.');
                                     return;
+                                } else if (result.state === 'prompt' && isMobile()) {
+                                    console.log('📱 Mobile device needs location permission');
+                                    setShowLocationPrompt(true);
+                                    return;
                                 }
+                            }).catch(err => {
+                                console.log('⚠️ Permission query failed:', err, 'Proceeding with geolocation request');
                             });
+                        } else if (isMobile()) {
+                            // On mobile, if permissions API is not available, show prompt
+                            console.log('📱 Mobile device without permissions API - showing location prompt');
+                            setShowLocationPrompt(true);
+                            return;
                         }
 
-                        getGeolocation()
+                        getGeolocation({
+                                enableHighAccuracy: true,
+                                timeout: isMobile() ? 20000 : 15000, // Longer timeout for mobile
+                                maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile
+                            })
                             .then(async (coords) => {
-                                console.log('✅ Location access granted (cached helper)');
+                                console.log('✅ Location access granted (cached helper):', coords);
                                 setShowLocationPrompt(false);
                                 const { lat: latitude, lng: longitude } = coords;
+                                
+                                // Set all location states
                                 setUserLatLng({ lat: latitude, lng: longitude });
+                                setLocation({ lat: latitude, lng: longitude });
+                                
+                                console.log('📱 Mobile location data set:', {
+                                    userLatLng: { lat: latitude, lng: longitude },
+                                    location: { lat: latitude, lng: longitude },
+                                    isMobile: isMobile()
+                                });
 
                                 if (!currentLocation) {
                                     try {
@@ -176,6 +200,9 @@ const IdPage = () => {
                                         console.log('⚠️ Error getting location name, using coordinates:', `${latitude},${longitude}`);
                                         setLocationDataReady(true);
                                     }
+                                } else {
+                                    // Even if we have currentLocation, mark as ready
+                                    setLocationDataReady(true);
                                 }
                             },
                                 (error) => {
@@ -235,11 +262,23 @@ const IdPage = () => {
     const geolocationPromiseRef = useRef(null);
     const lastGeolocationRef = useRef(null);
 
-    const getGeolocation = (options = { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }) => {
+    const getGeolocation = (options) => {
+        // Default options with mobile-specific adjustments
+        const defaultOptions = {
+            enableHighAccuracy: true,
+            timeout: isMobile() ? 25000 : 15000, // Longer timeout for mobile
+            maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile (5 min vs 1 min)
+        };
+        const finalOptions = { ...defaultOptions, ...options };
+        
+        console.log('🔍 Geolocation options:', finalOptions, 'isMobile:', isMobile());
+        
         if (lastGeolocationRef.current) {
+            console.log('📍 Using cached location:', lastGeolocationRef.current);
             return Promise.resolve(lastGeolocationRef.current);
         }
         if (geolocationPromiseRef.current) {
+            console.log('⏳ Geolocation request already in progress');
             return geolocationPromiseRef.current;
         }
         if (!navigator.geolocation) {
@@ -247,26 +286,35 @@ const IdPage = () => {
         }
 
         geolocationPromiseRef.current = new Promise((resolve, reject) => {
+            console.log('🌍 Starting geolocation request with options:', finalOptions);
+            
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
                     lastGeolocationRef.current = coords;
+                    console.log('✅ Geolocation success:', coords, 'Accuracy:', position.coords.accuracy, 'meters');
                     resolve(coords);
                 },
                 async (err) => {
-                    console.warn('Browser geolocation failed:', err && err.message, err && err.code);
+                    console.error('❌ Browser geolocation failed:', {
+                        message: err && err.message,
+                        code: err && err.code,
+                        isMobile: isMobile(),
+                        userAgent: navigator.userAgent
+                    });
 
                     // If permission was explicitly denied, do not attempt IP fallback.
                     if (err && err.code === 1) {
+                        console.log('🚫 Permission denied - no fallback');
                         reject(err);
                         return;
                     }
 
                     // If the failure is due to insecure origin, try IP-based fallback (approximate).
                     const isInsecureOrigin = err && err.message && /Only secure origins are allowed/i.test(err.message);
-                    if (isInsecureOrigin) {
+                    if (isInsecureOrigin || (err && err.code === 2)) { // POSITION_UNAVAILABLE
                         try {
-                            console.log('Attempting IP-based geolocation fallback (approximate).');
+                            console.log('🔄 Attempting IP-based geolocation fallback (approximate).');
                             const res = await fetch('https://ipapi.co/json');
                             if (res.ok) {
                                 const ipJson = await res.json();
@@ -275,20 +323,20 @@ const IdPage = () => {
                                 if (Number.isFinite(lat) && Number.isFinite(lon)) {
                                     const coords = { lat, lng: lon };
                                     lastGeolocationRef.current = coords;
-                                    console.log('IP-based geolocation success:', coords);
+                                    console.log('✅ IP-based geolocation success:', coords);
                                     resolve(coords);
                                     return;
                                 }
                             }
                         } catch (e) {
-                            console.warn('IP-based geolocation fallback failed:', e);
+                            console.warn('❌ IP-based geolocation fallback failed:', e);
                             // fallthrough to reject below
                         }
                     }
 
                     reject(err);
                 },
-                options
+                finalOptions
             );
         }).finally(() => {
             geolocationPromiseRef.current = null;
@@ -307,10 +355,28 @@ const IdPage = () => {
         setError(null);
 
         try {
-            const coords = await getGeolocation();
+            console.log('📱 Requesting location permission on mobile:', isMobile());
+            const coords = await getGeolocation({
+                enableHighAccuracy: true,
+                timeout: isMobile() ? 30000 : 15000, // Even longer timeout for explicit permission request
+                maximumAge: 0 // Don't use cached location for explicit requests
+            });
+            
             console.log('✅ Location permission granted:', coords);
+            
+            // Set all location states explicitly
             setUserLatLng(coords);
             setLocation(coords);
+            
+            // Store in lastGeolocationRef to ensure it's available for API calls
+            lastGeolocationRef.current = coords;
+            
+            console.log('📍 All location data set:', {
+                userLatLng: coords,
+                location: coords,
+                lastGeolocationRef: lastGeolocationRef.current,
+                isMobile: isMobile()
+            });
             
             // Optionally get city name
             try {
@@ -324,6 +390,7 @@ const IdPage = () => {
                 console.log('🗺️ Location name resolved:', detectedCity);
             } catch {
                 setCurrentLocation(`${coords.lat},${coords.lng}`);
+                console.log('⚠️ Using coordinates as location name');
             }
 
             // Mark location data as ready AFTER everything is set
@@ -331,7 +398,7 @@ const IdPage = () => {
             console.log('✅ Location data ready - proceeding with redirection logic');
 
         } catch (error) {
-            console.error("User denied location:", error);
+            console.error("❌ User denied location or location failed:", error);
             // Even if location is denied, mark as ready so app can proceed without location
             setLocationDataReady(true); 
             setShowLocationPrompt(true);
@@ -597,15 +664,19 @@ const IdPage = () => {
                     effectiveUserLatLng = location;
                 }
 
-                console.log("Location data for API:", {
+                console.log("📊 Location data for API:", {
                     effectiveLat,
                     effectiveLng,
                     effectiveUserLatLng,
                     userLatLng,
+                    locationState: location,
                     lastGeolocation: lastGeolocationRef.current,
                     hasTimeRouting,
                     hasLocationRouting,
-                    hasGeoFencing
+                    hasGeoFencing,
+                    isMobile: isMobile(),
+                    locationDataReady,
+                    currentLocation
                 });
 
                 const barcodeDetails = data?.jsonData?.data || {};
@@ -623,7 +694,15 @@ const IdPage = () => {
                     ipAddress: ipAddress || null,
                 };
 
-                console.log("Prepared payload:", payload);
+                console.log("📤 Prepared payload for API:", payload);
+                console.log("📍 Final location data being sent:", {
+                    latitude: payload.latitude,
+                    longitude: payload.longitude,
+                    userLatLng: payload.userLatLng,
+                    hasLocationData: !!(payload.latitude && payload.longitude),
+                    deviceType: payload.deviceType,
+                    ipAddress: payload.ipAddress
+                });
 
                 setLoading(true);
 
