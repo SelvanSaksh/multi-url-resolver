@@ -47,6 +47,7 @@ const IdPage = () => {
     const [locationRequired, setLocationRequired] = useState(false);
     const [dataLoaded, setDataLoaded] = useState(false);
     const [locationDataReady, setLocationDataReady] = useState(false);
+    const [initialDataCheckComplete, setInitialDataCheckComplete] = useState(false);
     const [ip, setIp] = useState("");
     const [locationScan, setLocationScan] = useState(false);
 
@@ -62,6 +63,18 @@ const IdPage = () => {
             return () => clearTimeout(timeout);
         }
     }, [locationRequired, locationDataReady]);
+
+    // Additional timeout for any location collection (including Time routing)
+    useEffect(() => {
+        if (!locationDataReady && (userLatLng || showLocationPrompt)) {
+            const timeout = setTimeout(() => {
+                console.log('⏰ General location data timeout - proceeding without location');
+                setLocationDataReady(true);
+            }, 15000); // 15 second timeout for general location collection
+
+            return () => clearTimeout(timeout);
+        }
+    }, [locationDataReady, userLatLng, showLocationPrompt]);
 
 
     const fetchIP = async () => {
@@ -243,6 +256,8 @@ const IdPage = () => {
                 }
             } catch (error) {
                 console.error('Error fetching barcode details:', error);
+            } finally {
+                setInitialDataCheckComplete(true);
             }
         };
         checkAndFetchLocation();
@@ -595,6 +610,12 @@ const IdPage = () => {
 
             // Prevent duplicate calls
             if (scanSentRef.current) return;
+            
+            // Wait for initial data check to complete
+            if (!initialDataCheckComplete) {
+                console.log("⏳ Waiting for initial data check to complete...");
+                return;
+            }
 
             try {
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
@@ -611,23 +632,52 @@ const IdPage = () => {
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Time");
 
-                // Critical fix: Wait for location data to be ready if geo-fencing is required
-                if (hasGeoFencing && !locationDataReady) {
-                    console.log("⏳ Geo-fencing detected but location not ready yet. Waiting for user permission...");
+                // Critical fix: Wait for location data to be ready if any location-based feature is detected
+                // Since time routing DOES trigger location collection, we should wait for it
+                
+                const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting;
+                
+                // If no location-based routing was detected, mark location as ready immediately
+                if (!locationCollectionTriggered && !locationDataReady) {
+                    console.log("📍 No location-based routing detected - proceeding without location wait");
+                    setLocationDataReady(true);
+                }
+                
+                if (locationCollectionTriggered && !locationDataReady) {
+                    if (hasTimeRouting) {
+                        console.log("⏰🔍 TIME ROUTING: Waiting for location data before redirect...", {
+                            hasGeoFencing,
+                            hasLocationRouting, 
+                            hasTimeRouting,
+                            locationDataReady,
+                            userLatLng: !!userLatLng,
+                            lastGeolocation: !!lastGeolocationRef.current,
+                            currentLocation,
+                            locationRequired
+                        });
+                    } else {
+                        console.log("⏳ Location collection was triggered but location not ready yet. Waiting...", {
+                            hasGeoFencing,
+                            hasLocationRouting, 
+                            hasTimeRouting,
+                            locationDataReady,
+                            userLatLng: !!userLatLng,
+                            lastGeolocation: !!lastGeolocationRef.current,
+                            currentLocation
+                        });
+                    }
                     return;
                 }
-
-                // Also wait for location routing if required
-                if (hasLocationRouting && !locationDataReady) {
-                    console.log("⏳ Location routing detected but location not ready yet. Waiting...");
-                    return;
-                }
-
-                // For time-based routing, we still want to collect location data if available for analytics
-                // but don't block the API call if location isn't ready
-                if (hasTimeRouting && (hasLocationRouting || hasGeoFencing) && !locationDataReady) {
-                    console.log("⏳ Time routing with location features detected but location not ready. Waiting...");
-                    return;
+                
+                // Add debug message when location is ready and proceeding
+                if (locationCollectionTriggered && locationDataReady) {
+                    console.log("✅ Location data ready - proceeding with API call and redirect", {
+                        hasTimeRouting,
+                        hasGeoFencing,
+                        hasLocationRouting,
+                        userLatLng: !!userLatLng,
+                        lastGeolocation: !!lastGeolocationRef.current
+                    });
                 }
 
                 const ipAddress = await fetch("https://api.ipify.org?format=json")
@@ -767,7 +817,7 @@ const IdPage = () => {
         }
         console.log("RENDER L");
 
-    }, [id, locationDataReady]);
+    }, [id, locationDataReady, initialDataCheckComplete]);
 
 
     if (sessionExpired) {
