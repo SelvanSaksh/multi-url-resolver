@@ -50,20 +50,17 @@ const IdPage = () => {
     const [ip, setIp] = useState("");
     const [locationScan, setLocationScan] = useState(false);
 
-    useEffect(() => {
-        const fetchIP = async () => {
-            try {
-                const response = await fetch("https://api.ipify.org?format=json");
-                const data = await response.json();
-                setIp(data.ip);
-            } catch (err) {
-                console.error("Failed to fetch IP:", err);
-            }
-        };
 
-        fetchIP();
-    }, []);
 
+    const fetchIP = async () => {
+        try {
+            const response = await fetch("https://api.ipify.org?format=json");
+            const data = await response.json();
+            setIp(data.ip, "IPIPIP");
+        } catch (err) {
+            console.error("Failed to fetch IP:", err);
+        }
+    };
     const getLocationCoordinates = async () => {
         await getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
             .then(coords => {
@@ -366,7 +363,7 @@ const IdPage = () => {
         return currentMinutes >= startMinutes && currentMinutes <= endMinutes;
     };
 
-    const findMatchingUrlAndTitle = (jsonData, currentLocation, userLatLng, count) => {
+    const findMatchingUrlAndTitle = async (jsonData, currentLocation, userLatLng, count) => {
         console.log(currentLocation, "currentLocation FUN");
         console.log(jsonData, "jsonData");
 
@@ -434,6 +431,7 @@ const IdPage = () => {
                 const url = details.url;
                 const userLat = effectiveUserLatLng.lat;
                 const userLng = effectiveUserLatLng.lng;
+                setLocation({ lat: userLat, lng: userLng });
                 const distance = getDistanceFromLatLonInMeters(userLat, userLng, apiLat, apiLng);
                 console.log(distance, "distance");
                 if (!isNaN(apiLat) && !isNaN(apiLng) && !isNaN(radius) && userLat && userLng) {
@@ -524,137 +522,10 @@ const IdPage = () => {
         setLoadingImage(randomImage);
     }, []);
 
-    // useEffect(() => {
-    //     const fetchAndSendBarcodeDetails = async () => {
-    //         console.log('fetchAndSendBarcodeDetails called', { id, scanSent: scanSentRef.current, locationDataReady, userLatLng, currentLocation });
-    //         if (scanSentRef.current) {
-    //             console.log('Early return: scan already sent (scanSentRef.current = true)');
-    //             return;
-    //         }
-    //         const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
-    //         const data = response.data;
-    //         const hasLocationRouting = Array.isArray(data?.jsonData?.data) &&
-    //             data.jsonData.data.some(item => item.type === 'Location');
-
-    //         if (hasLocationRouting && !locationDataReady) {
-    //             console.log('Early return: location routing required but locationDataReady =', locationDataReady);
-    //             return;
-    //         }
-
-    //         try {
-    //             const barcodeDetails = data?.jsonData?.data || {};
-    //             const payload = {
-    //                 barcodeDetails: { ...barcodeDetails, ...{ barcodeImageUrl: data?.barcodeImageUrl, defaultURL: data?.defaultURL } },
-    //                 barcodeId: data?.id,
-    //                 userLatLng,
-    //                 latitude: location?.lat ?? null,
-    //                 longitude: location?.lng ?? null,
-    //                 deviceType: deviceType,
-    //                 ipAddress: ip || null,
-    //             };
-
-    //             console.log('Prepared payload (will send scan):', payload);
-
-    //             setLoading(true);
-
-    //             const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
-    //             scanSentRef.current = true;
-
-
-    //             // Device detection for redirect
-    //             const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-    //             let detectedDeviceType = '';
-    //             if (/android/i.test(userAgent)) {
-    //                 detectedDeviceType = 'Android';
-    //             } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-    //                 detectedDeviceType = 'iPhone';
-    //             }
-    //             console.log('Detected deviceType for redirect:', detectedDeviceType);
-
-    //             let redirectUrl = '';
-    //             if (data.jsonData && Array.isArray(data.jsonData.data)) {
-    //                 const deviceObj = data.jsonData.data.find(
-    //                     item => item.type === 'Device' && item.details && item.details.deviceType === detectedDeviceType
-    //                 );
-    //                 if (deviceObj && deviceObj.details && deviceObj.details.url) {
-    //                     redirectUrl = deviceObj.details.url;
-    //                     console.log('Found device-specific URL for', detectedDeviceType + ':', redirectUrl);
-    //                 }
-    //             }
-
-    //             if (!redirectUrl) {
-    //                 console.log('No device-specific URL found. Trying dynamic routing with:', {
-    //                     currentLocation,
-    //                     userLatLng,
-    //                     dataArray: data.jsonData?.data
-    //                 });
-
-    //                 // If there are geo-fencing rules, ensure we have coordinates before matching.
-    //                 const hasGeoFencing = Array.isArray(data.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Geo-fencing');
-    //                 if (hasGeoFencing && !(userLatLng || lastGeolocationRef.current)) {
-    //                     console.log('Geo-fencing rules present but no user coords — attempting to obtain coordinates...');
-    //                     try {
-    //                         const coords = await getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
-    //                         if (coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lng)) {
-    //                             setUserLatLng({ lat: coords.lat, lng: coords.lng });
-    //                             setLocation({ lat: coords.lat, lng: coords.lng });
-    //                             console.log('Coordinates obtained for geo-fencing:', coords);
-    //                         }
-    //                     } catch (geoErr) {
-    //                         console.warn('Failed to obtain coords for geo-fencing:', geoErr);
-    //                         if (geoErr && geoErr.code === 1) {
-    //                             setShowLocationPrompt(true);
-    //                             setError('Location access denied. Please enable location services to continue.');
-    //                             return;
-    //                         }
-    //                     }
-    //                 }
-
-    //                 const dynamicResult = findMatchingUrlAndTitle(data.jsonData, currentLocation, userLatLng);
-    //                 redirectUrl = dynamicResult.url;
-    //                 console.log('Dynamic routing result:', dynamicResult);
-    //             }
-
-    //             if (!redirectUrl) {
-    //                 redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
-    //                 console.log('Using default URL:', redirectUrl);
-    //             }
-
-    //             if (redirectUrl) {
-    //                 const finalUrl = redirectUrl.startsWith('http') ? redirectUrl : `https://${redirectUrl}`;
-    //                     const scanResponse = await api.post(scanUrl, payload);
-    //                     console.log('Scan details sent successfully:', scanResponse.data);
-    //                 window.location.replace(finalUrl);
-    //                 return;
-    //             }
-
-    //             // No redirect URL: reveal details to user
-    //             const noMatchLogData = {
-    //                 id: id,
-    //                 currentLocation: currentLocation,
-    //                 deviceType: detectedDeviceType,
-    //                 userCoordinates: userLatLng,
-    //                 availableData: data.jsonData?.data,
-    //                 source: 'no_redirection_match'
-    //             };
-
-    //             setShowDetails(true);
-    //         } catch (error) {
-    //             console.error('Failed to send barcode details or redirect:', error);
-    //             setShowDetails(true);
-    //             alert('Error: ' + (error?.message || 'Something went wrong. Please try again.'));
-    //         } finally {
-    //             setLoading(false);
-    //         }
-    //     };
-
-    //     if (id) {
-    //         fetchAndSendBarcodeDetails();
-    //     }
-    // }, [id, locationDataReady, userLatLng, currentLocation, location, deviceType, ip]);
 
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
+
             console.log("fetchAndSendBarcodeDetails called", {
                 id,
                 scanSent: scanSentRef.current,
@@ -669,16 +540,28 @@ const IdPage = () => {
             try {
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
-
                 const hasLocationRouting =
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Location");
+                const ipAddress = await fetch("https://api.ipify.org?format=json")
+                    .then(res => res.json())
+                    .then(json => json.ip)
+                    .catch(() => null);
 
                 // Wait until location is ready if required
                 if (hasLocationRouting && !locationDataReady) return;
+                const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+                let deviceType = "";
+                if (/android/i.test(userAgent)) deviceType = "Android";
+                else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) deviceType = "iPhone";
+                else deviceType = "Desktop";
+
 
                 // Lock further runs
                 scanSentRef.current = true;
+                const effectiveLat = userLatLng?.lat ?? currentLocation?.lat ?? lastGeolocationRef.current?.lat ?? null;
+                const effectiveLng = userLatLng?.lng ?? currentLocation?.lng ?? lastGeolocationRef.current?.lng ?? null;
+
 
                 const barcodeDetails = data?.jsonData?.data || {};
                 const payload = {
@@ -689,10 +572,10 @@ const IdPage = () => {
                     },
                     barcodeId: data?.id,
                     userLatLng,
-                    latitude: location?.lat ?? userLatLng?.lat ?? null,
-                    longitude: location?.lng ?? userLatLng?.lng ?? null,
+                    latitude: effectiveLat,  // <-- use effectiveLat here
+                    longitude: effectiveLng,
                     deviceType: deviceType,
-                    ipAddress: ip || null,
+                    ipAddress: ipAddress || null,
                 };
 
                 console.log("Prepared payload:", payload);
@@ -701,14 +584,6 @@ const IdPage = () => {
 
                 const scanUrl = "https://tandt.api.sakksh.com/genbarcode/scan";
 
-                // Detect device
-                const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-                let detectedDeviceType = "";
-                if (/android/i.test(userAgent)) {
-                    detectedDeviceType = "Android";
-                } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-                    detectedDeviceType = "iPhone";
-                }
 
                 let redirectUrl = "";
 
@@ -752,7 +627,7 @@ const IdPage = () => {
 
                     await api.post(scanUrl, payload);
                     console.log("Scan details sent successfully");
-                    window.location.replace(finalUrl);
+                    // window.location.replace(finalUrl);
                 } else {
                     setShowDetails(true);
                 }
