@@ -64,8 +64,8 @@ const IdPage = () => {
         fetchIP();
     }, []);
 
-    useEffect(() => {
-        getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
+    const getLocationCoordinates = async () => {
+        await getGeolocation({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 })
             .then(coords => {
                 setLocation({ lat: coords.lat, lng: coords.lng });
                 setUserLatLng({ lat: coords.lat, lng: coords.lng });
@@ -81,6 +81,10 @@ const IdPage = () => {
                     setError(err.message || String(err));
                 }
             });
+    }
+
+    useEffect(() => {
+        getLocationCoordinates()
     }, []);
 
     useEffect(() => {
@@ -422,7 +426,6 @@ const IdPage = () => {
                     }
                 }
             }
-            console.log(effectiveUserLatLng, "userLatLng (effective)");
 
             if (item.type === 'Geo-fencing' && effectiveUserLatLng) {
                 const apiLat = parseFloat(details.latitude);
@@ -466,10 +469,13 @@ const IdPage = () => {
                 // Device detection
                 const userAgent = navigator.userAgent || navigator.vendor || window.opera;
                 let deviceType = '';
+
                 if (/android/i.test(userAgent)) {
                     deviceType = 'Android';
                 } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
                     deviceType = 'iPhone';
+                } else {
+                    deviceType = 'Desktop';
                 }
 
                 let redirectUrl = '';
@@ -746,7 +752,7 @@ const IdPage = () => {
 
                     await api.post(scanUrl, payload);
                     console.log("Scan details sent successfully");
-                    window.location.replace(finalUrl);
+                    // window.location.replace(finalUrl);
                 } else {
                     setShowDetails(true);
                 }
@@ -761,6 +767,8 @@ const IdPage = () => {
         if (id) {
             fetchAndSendBarcodeDetails();
         }
+        console.log("RENDER L");
+
     }, [id, locationDataReady]);
 
 
