@@ -50,6 +50,14 @@ const IdPage = () => {
     const [initialDataCheckComplete, setInitialDataCheckComplete] = useState(false);
     const [ip, setIp] = useState("");
     const [locationScan, setLocationScan] = useState(false);
+    const [userLatLng, setUserLatLng] = useState(null);
+    const [mobile, setMobile] = useState(true);
+    const [urlData, setUrlData] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [showDetails, setShowDetails] = useState(false);
+    const [displayUrl, setDisplayUrl] = useState('');
+    const [displayTitle, setDisplayTitle] = useState('');
+    const [loadingImage, setLoadingImage] = useState(null);
 
 
     useEffect(() => {
@@ -263,14 +271,6 @@ const IdPage = () => {
         checkAndFetchLocation();
     }, []);
 
-    const [mobile, setMobile] = useState(true);
-    const [urlData, setUrlData] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [showDetails, setShowDetails] = useState(false);
-    const [displayUrl, setDisplayUrl] = useState('');
-    const [displayTitle, setDisplayTitle] = useState('');
-
-    const [userLatLng, setUserLatLng] = useState(null);
     // Guard ref to ensure the scan/redirection flow runs only once
     const scanSentRef = useRef(false);
     // Geolocation caching to avoid multiple prompts / duplicate requests
@@ -579,10 +579,6 @@ const IdPage = () => {
         fetchUrlData();
     }, [id, sessionExpired]);
 
-    const [loadingImage, setLoadingImage] = useState(null);
-
-
-
     useEffect(() => {
         const images = [
             GenerateImage,
@@ -800,7 +796,7 @@ const IdPage = () => {
 
                     await api.post(scanUrl, payload);
                     console.log("Scan details sent successfully");
-                    window.location.replace(finalUrl);
+                    // window.location.replace(finalUrl);
                 } else {
                     setShowDetails(true);
                 }
