@@ -580,7 +580,8 @@ const IdPage = () => {
                 }
             } catch (error) {
                 console.error('Error fetching URL data:', error);
-                setLoading(false);
+                // Don't set loading to false here - let the main redirect logic handle it
+                // setLoading(false);
             }
         };
         fetchUrlData();
@@ -596,6 +597,7 @@ const IdPage = () => {
         ];
         const randomImage = images[Math.floor(Math.random() * images.length)];
         setLoadingImage(randomImage);
+        console.log('🖼️ Loading image set:', randomImage);
     }, []);
 
 
@@ -835,13 +837,52 @@ const IdPage = () => {
                         window.location.replace(finalUrl);
                     }, 500); // 500ms delay to show the loading screen
                 } else {
-                    setShowDetails(true);
-                    setLoading(false);
+                    // If no redirect URL found, try to get the default URL from the original data
+                    console.log("No redirect URL found - checking for any default URL");
+                    const fallbackUrl = data?.defaultURL || data?.defaultUrl || 
+                                       data?.jsonData?.defaultURL || data?.jsonData?.defaultUrl;
+                    
+                    if (fallbackUrl) {
+                        const finalUrl = fallbackUrl.startsWith("http") ? fallbackUrl : `https://${fallbackUrl}`;
+                        console.log("Using fallback URL:", finalUrl);
+                        await api.post(scanUrl, payload);
+                        setTimeout(() => {
+                            window.location.replace(finalUrl);
+                        }, 500);
+                    } else {
+                        // Absolutely no URL found - show details page
+                        console.log("No URL found at all - showing details page");
+                        setShowDetails(true);
+                        setLoading(false);
+                    }
                 }
             } catch (error) {
                 console.error("Failed to send barcode details or redirect:", error);
-                setShowDetails(true);
-                setLoading(false);
+                
+                // On error, try to get any available default URL and redirect anyway
+                try {
+                    const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
+                    const data = response.data;
+                    const fallbackUrl = data?.defaultURL || data?.defaultUrl || 
+                                       data?.jsonData?.defaultURL || data?.jsonData?.defaultUrl;
+                    
+                    if (fallbackUrl) {
+                        const finalUrl = fallbackUrl.startsWith("http") ? fallbackUrl : `https://${fallbackUrl}`;
+                        console.log("Error occurred, using fallback URL:", finalUrl);
+                        setTimeout(() => {
+                            window.location.replace(finalUrl);
+                        }, 1000);
+                    } else {
+                        // Only show details page if absolutely no URL is available
+                        console.log("No fallback URL available - showing details page");
+                        setShowDetails(true);
+                        setLoading(false);
+                    }
+                } catch (fallbackError) {
+                    console.error("Fallback also failed:", fallbackError);
+                    // Keep loading screen - don't show broken page
+                    console.log("Keeping loading screen active due to errors");
+                }
             }
         };
 
@@ -932,31 +973,55 @@ const IdPage = () => {
         );
     }
 
+    // Keep showing loading screen until we explicitly want to show the details page
+    // Only show details page when loading is false AND showDetails is true
     if (loading || !showDetails) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
-                {loadingImage && (
-                    <div style={{ textAlign: 'center' }}>
-                        <img src={loadingImage} alt="Loading" style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px' }} />
+                <div style={{ textAlign: 'center' }}>
+                    {loadingImage ? (
+                        <img 
+                            src={loadingImage} 
+                            alt="Loading" 
+                            style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px' }}
+                            onError={(e) => {
+                                console.log('🖼️ Image failed to load, hiding');
+                                e.target.style.display = 'none';
+                            }}
+                        />
+                    ) : (
                         <div style={{ 
-                            color: '#1976d2', 
-                            fontSize: '18px', 
-                            fontWeight: 'bold',
-                            marginBottom: '10px'
+                            width: '200px', 
+                            height: '200px', 
+                            backgroundColor: '#e3f2fd', 
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            margin: '0 auto 20px auto',
+                            fontSize: '48px'
                         }}>
-                            Processing QR Code...
+                            📱
                         </div>
-                        <div style={{ 
-                            color: '#666', 
-                            fontSize: '14px',
-                            maxWidth: '300px',
-                            margin: '0 auto',
-                            lineHeight: '1.4'
-                        }}>
-                            {locationRequired ? 'Collecting location data for personalized content...' : 'Analyzing QR code data...'}
-                        </div>
+                    )}
+                    <div style={{ 
+                        color: '#1976d2', 
+                        fontSize: '18px', 
+                        fontWeight: 'bold',
+                        marginBottom: '10px'
+                    }}>
+                        Processing QR Code...
                     </div>
-                )}
+                    <div style={{ 
+                        color: '#666', 
+                        fontSize: '14px',
+                        maxWidth: '300px',
+                        margin: '0 auto',
+                        lineHeight: '1.4'
+                    }}>
+                        {locationRequired ? 'Collecting location data for personalized content...' : 'Analyzing QR code data...'}
+                    </div>
+                </div>
             </div>
         );
     }
