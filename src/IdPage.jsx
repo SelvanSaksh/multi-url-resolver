@@ -51,6 +51,18 @@ const IdPage = () => {
     const [locationScan, setLocationScan] = useState(false);
 
 
+    useEffect(() => {
+        if (locationRequired && !locationDataReady) {
+            const timeout = setTimeout(() => {
+                console.log('⏰ Location data timeout - user did not respond');
+                setLocationDataReady(true);
+                setError('Location permission not given. Some features may not work.');
+            }, 10000); // 10 second timeout
+
+            return () => clearTimeout(timeout);
+        }
+    }, [locationRequired, locationDataReady]);
+
 
     const fetchIP = async () => {
         try {
@@ -291,53 +303,33 @@ const IdPage = () => {
         scanSentRef.current = false;
     }, [id]);
 
-    const requestLocationPermission = () => {
-        console.log('🔄 Requesting location permission...');
+    const requestLocationPermission = async () => {
         setShowLocationPrompt(false);
         setError(null);
 
-        if (navigator.geolocation) {
-            getGeolocation()
-                .then(async (coords) => {
-                    console.log('✅ Location permission granted (helper)');
-                    const { lat: latitude, lng: longitude } = coords;
-                    setUserLatLng({ lat: latitude, lng: longitude });
-                    setLocation({ lat: latitude, lng: longitude });
+        try {
+            const coords = await getGeolocation();
+            setUserLatLng(coords);
+            setLocation(coords);
+            setLocationDataReady(true); // only now mark ready
 
-                    // Get city name from coordinates
-                    try {
-                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                        const locData = await res.json();
-                        const detectedCity = locData.address.city ||
-                            locData.address.town ||
-                            locData.address.village ||
-                            locData.address.state_district ||
-                            locData.address.state || '';
-                        if (!currentLocationAutoSetRef.current) {
-                            setCurrentLocation(detectedCity);
-                            currentLocationAutoSetRef.current = true;
-                        }
-                        console.log('🏙️ Location detected:', detectedCity);
-                    } catch (err) {
-                        if (!currentLocationAutoSetRef.current) {
-                            setCurrentLocation(`${latitude},${longitude}`);
-                            currentLocationAutoSetRef.current = true;
-                        }
-                    }
-                })
-                .catch((error) => {
-                    console.error('🚫 Location permission denied again (helper):', error);
-                    setShowLocationPrompt(true);
-                    if (error.code === error.PERMISSION_DENIED) {
-                        setError('Location access is required for location-based routing. Please enable location in your browser settings.');
-                    } else {
-                        setError('Unable to access location. Please check your location settings and try again.');
-                    }
-                });
-        } else {
-            setError('Geolocation is not supported by this browser.');
+            // Optionally get city name
+            try {
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}`);
+                const locData = await res.json();
+                setCurrentLocation(locData.address.city || locData.address.town || coords.lat + ',' + coords.lng);
+            } catch {
+                setCurrentLocation(`${coords.lat},${coords.lng}`);
+            }
+
+        } catch (error) {
+            console.error("User denied location:", error);
+            setLocationDataReady(true); // mark ready so redirection can handle fallback
+            setShowLocationPrompt(true);
+            setError('Location access is required for location-based routing. Please enable location to continue.');
         }
     };
+
 
     const getCurrentTime = () => {
         const now = new Date();
@@ -608,6 +600,11 @@ const IdPage = () => {
                     );
                     redirectUrl = dynamicResult.url;
                     console.log("Dynamic routing result:", dynamicResult);
+                }
+
+                if (locationRequired && !locationDataReady) {
+                    console.log("⏳ Location not ready yet. Pausing redirection.");
+                    return; // do not redirect yet
                 }
 
                 // Fallback to default
