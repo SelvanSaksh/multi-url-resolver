@@ -140,18 +140,19 @@ const IdPage = () => {
                 const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
                 const hasGeoFencing = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Geo-fencing');
                 const hasTimeRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Time');
+                const hasDeviceRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Device');
 
                 if (hasLocationType || hasGeoFencing) {
                     setLocationRequired(true);
                     console.log('📍 Location-based routing or geo-fencing detected in data');
                 }
                 
-                // For time-based routing, try to collect location data for analytics but don't require it
-                if (hasTimeRouting && !hasLocationType && !hasGeoFencing) {
-                    console.log('⏰ Time-based routing detected - will collect location if available for analytics');
+                // For time-based and device routing, collect location data for analytics
+                if ((hasTimeRouting || hasDeviceRouting) && !hasLocationType && !hasGeoFencing) {
+                    console.log('⏰🔧 Time-based or Device routing detected - will collect location if available for analytics');
                 }
 
-                if ((hasLocationType || hasGeoFencing || hasTimeRouting) && (!currentLocation || !userLatLng)) {
+                if ((hasLocationType || hasGeoFencing || hasTimeRouting || hasDeviceRouting) && (!currentLocation || !userLatLng)) {
                     if (navigator.geolocation) {
                         // Check location permission first
                         if (navigator.permissions) {
@@ -562,10 +563,16 @@ const IdPage = () => {
                 let redirectUrl = '';
                 if (data.jsonData && Array.isArray(data.jsonData.data)) {
                     const deviceObj = data.jsonData.data.find(
-                        item => item.type === 'Device' && item.details && item.details.deviceType === deviceType
+                        item => item.type === 'Device' && item.details && 
+                        (item.details.deviceType === deviceType || item.details.device === deviceType)
                     );
                     if (deviceObj && deviceObj.details && deviceObj.details.url) {
                         redirectUrl = deviceObj.details.url;
+                        console.log('🔧 Early device detection found URL:', {
+                            deviceType,
+                            deviceUrl: redirectUrl,
+                            deviceDetails: deviceObj.details
+                        });
                     }
                 }
                 if (!redirectUrl) {
@@ -628,10 +635,14 @@ const IdPage = () => {
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Time");
 
+                const hasDeviceRouting = 
+                    Array.isArray(data?.jsonData?.data) &&
+                    data.jsonData.data.some(item => item.type === "Device");
+
                 // Critical fix: Wait for location data to be ready if any location-based feature is detected
-                // Since time routing DOES trigger location collection, we should wait for it
+                // Since time routing and device routing BOTH trigger location collection, we should wait for them
                 
-                const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting;
+                const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting || hasDeviceRouting;
                 
                 // If no location-based routing was detected, mark location as ready immediately
                 if (!locationCollectionTriggered && !locationDataReady) {
@@ -645,17 +656,31 @@ const IdPage = () => {
                             hasGeoFencing,
                             hasLocationRouting, 
                             hasTimeRouting,
+                            hasDeviceRouting,
                             locationDataReady,
                             userLatLng: !!userLatLng,
                             lastGeolocation: !!lastGeolocationRef.current,
                             currentLocation,
                             locationRequired
                         });
+                    } else if (hasDeviceRouting) {
+                        console.log("🔧📍 DEVICE ROUTING: Waiting for location data before redirect...", {
+                            hasGeoFencing,
+                            hasLocationRouting, 
+                            hasTimeRouting,
+                            hasDeviceRouting,
+                            locationDataReady,
+                            userLatLng: !!userLatLng,
+                            lastGeolocation: !!lastGeolocationRef.current,
+                            currentLocation,
+                            deviceType
+                        });
                     } else {
                         console.log("⏳ Location collection was triggered but location not ready yet. Waiting...", {
                             hasGeoFencing,
                             hasLocationRouting, 
                             hasTimeRouting,
+                            hasDeviceRouting,
                             locationDataReady,
                             userLatLng: !!userLatLng,
                             lastGeolocation: !!lastGeolocationRef.current,
@@ -671,6 +696,7 @@ const IdPage = () => {
                         hasTimeRouting,
                         hasGeoFencing,
                         hasLocationRouting,
+                        hasDeviceRouting,
                         userLatLng: !!userLatLng,
                         lastGeolocation: !!lastGeolocationRef.current
                     });
@@ -761,10 +787,15 @@ const IdPage = () => {
                     const deviceObj = data.jsonData.data.find(
                         item =>
                             item.type === "Device" &&
-                            item.details?.deviceType === deviceType
+                            (item.details?.deviceType === deviceType || item.details?.device === deviceType)
                     );
                     if (deviceObj?.details?.url) {
                         redirectUrl = deviceObj.details.url;
+                        console.log("🔧 Device-specific URL found:", {
+                            deviceType,
+                            deviceUrl: redirectUrl,
+                            deviceDetails: deviceObj.details
+                        });
                     }
                 }
 
