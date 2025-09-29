@@ -66,19 +66,17 @@ const IdPage = () => {
                 console.log('⏰ Location data timeout - user did not respond');
                 setLocationDataReady(true);
                 setError('Location permission not given. Some features may not work.');
-            }, 10000); // 10 second timeout
-
+            }, 10000);
             return () => clearTimeout(timeout);
         }
     }, [locationRequired, locationDataReady]);
 
-    // Additional timeout for any location collection (including Time routing)
     useEffect(() => {
         if (!locationDataReady && (userLatLng || showLocationPrompt)) {
             const timeout = setTimeout(() => {
                 console.log('⏰ General location data timeout - proceeding without location');
                 setLocationDataReady(true);
-            }, 15000); // 15 second timeout for general location collection
+            }, 15000);
 
             return () => clearTimeout(timeout);
         }
@@ -104,7 +102,7 @@ const IdPage = () => {
     useEffect(() => {
         // Don't automatically get location on load - let it be triggered by user permission
         // getLocationCoordinates()
-        
+
         // Fetch IP address early (this doesn't require user permission)
         fetchIP();
     }, []);
@@ -146,7 +144,7 @@ const IdPage = () => {
                     setLocationRequired(true);
                     console.log('📍 Location-based routing or geo-fencing detected in data');
                 }
-                
+
                 // For time-based and device routing, collect location data for analytics
                 if ((hasTimeRouting || hasDeviceRouting) && !hasLocationType && !hasGeoFencing) {
                     console.log('⏰🔧 Time-based or Device routing detected - will collect location if available for analytics');
@@ -179,19 +177,19 @@ const IdPage = () => {
                         }
 
                         getGeolocation({
-                                enableHighAccuracy: true,
-                                timeout: isMobile() ? 20000 : 15000, // Longer timeout for mobile
-                                maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile
-                            })
+                            enableHighAccuracy: true,
+                            timeout: isMobile() ? 20000 : 15000, // Longer timeout for mobile
+                            maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile
+                        })
                             .then(async (coords) => {
                                 console.log('✅ Location access granted (cached helper):', coords);
                                 setShowLocationPrompt(false);
                                 const { lat: latitude, lng: longitude } = coords;
-                                
+
                                 // Set all location states
                                 setUserLatLng({ lat: latitude, lng: longitude });
                                 setLocation({ lat: latitude, lng: longitude });
-                                
+
                                 console.log('📱 Mobile location data set:', {
                                     userLatLng: { lat: latitude, lng: longitude },
                                     location: { lat: latitude, lng: longitude },
@@ -286,9 +284,9 @@ const IdPage = () => {
             maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile (5 min vs 1 min)
         };
         const finalOptions = { ...defaultOptions, ...options };
-        
+
         console.log('🔍 Geolocation options:', finalOptions, 'isMobile:', isMobile());
-        
+
         if (lastGeolocationRef.current) {
             console.log('📍 Using cached location:', lastGeolocationRef.current);
             return Promise.resolve(lastGeolocationRef.current);
@@ -303,7 +301,7 @@ const IdPage = () => {
 
         geolocationPromiseRef.current = new Promise((resolve, reject) => {
             console.log('🌍 Starting geolocation request with options:', finalOptions);
-            
+
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
@@ -377,31 +375,31 @@ const IdPage = () => {
                 timeout: isMobile() ? 30000 : 15000, // Even longer timeout for explicit permission request
                 maximumAge: 0 // Don't use cached location for explicit requests
             });
-            
+
             console.log('✅ Location permission granted:', coords);
-            
+
             // Set all location states explicitly
             setUserLatLng(coords);
             setLocation(coords);
-            
+
             // Store in lastGeolocationRef to ensure it's available for API calls
             lastGeolocationRef.current = coords;
-            
+
             console.log('📍 All location data set:', {
                 userLatLng: coords,
                 location: coords,
                 lastGeolocationRef: lastGeolocationRef.current,
                 isMobile: isMobile()
             });
-            
+
             // Optionally get city name
             try {
                 const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}`);
                 const locData = await res.json();
-                const detectedCity = locData.address.city || 
-                                   locData.address.town || 
-                                   locData.address.village ||
-                                   coords.lat + ',' + coords.lng;
+                const detectedCity = locData.address.city ||
+                    locData.address.town ||
+                    locData.address.village ||
+                    coords.lat + ',' + coords.lng;
                 setCurrentLocation(detectedCity);
                 console.log('🗺️ Location name resolved:', detectedCity);
             } catch {
@@ -416,7 +414,7 @@ const IdPage = () => {
         } catch (error) {
             console.error("❌ User denied location or location failed:", error);
             // Even if location is denied, mark as ready so app can proceed without location
-            setLocationDataReady(true); 
+            setLocationDataReady(true);
             setShowLocationPrompt(true);
             setError('Location access is required for location-based routing. Please enable location to continue.');
         }
@@ -563,8 +561,8 @@ const IdPage = () => {
                 let redirectUrl = '';
                 if (data.jsonData && Array.isArray(data.jsonData.data)) {
                     const deviceObj = data.jsonData.data.find(
-                        item => item.type === 'Device' && item.details && 
-                        (item.details.deviceType === deviceType || item.details.device === deviceType)
+                        item => item.type === 'Device' && item.details &&
+                            (item.details.deviceType === deviceType || item.details.device === deviceType)
                     );
                     if (deviceObj && deviceObj.details && deviceObj.details.url) {
                         redirectUrl = deviceObj.details.url;
@@ -613,7 +611,7 @@ const IdPage = () => {
 
             // Prevent duplicate calls
             if (scanSentRef.current) return;
-            
+
             // Wait for initial data check to complete
             if (!initialDataCheckComplete) {
                 console.log("⏳ Waiting for initial data check to complete...");
@@ -626,35 +624,41 @@ const IdPage = () => {
                 const hasLocationRouting =
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Location");
-                
-                const hasGeoFencing = 
+
+                const hasGeoFencing =
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Geo-fencing");
 
-                const hasTimeRouting = 
+                const hasTimeRouting =
                     Array.isArray(data?.jsonData?.data) &&
                     data.jsonData.data.some(item => item.type === "Time");
 
-                const hasDeviceRouting = 
-                    Array.isArray(data?.jsonData?.data) &&
-                    data.jsonData.data.some(item => item.type === "Device");
+                const hasDeviceRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === "Device");
 
-                // Critical fix: Wait for location data to be ready if any location-based feature is detected
-                // Since time routing and device routing BOTH trigger location collection, we should wait for them
-                
                 const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting || hasDeviceRouting;
-                
-                // If no location-based routing was detected, mark location as ready immediately
+                const isDeviceOnlyRouting = hasDeviceRouting && !hasLocationRouting && !hasGeoFencing && !hasTimeRouting;
                 if (!locationCollectionTriggered && !locationDataReady) {
                     console.log("📍 No location-based routing detected - proceeding without location wait");
                     setLocationDataReady(true);
                 }
-                
+                if (isDeviceOnlyRouting) {
+                    console.log("🔧 Device-only routing detected - proceeding without location wait");
+                    setLocationDataReady(true);
+
+                } else {
+                    const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting || hasDeviceRouting;
+                    if (locationCollectionTriggered && !locationDataReady) {
+                        console.log("⏳ Waiting for location data...");
+                        return;
+                    }
+                }
+
+
                 if (locationCollectionTriggered && !locationDataReady) {
                     if (hasTimeRouting) {
                         console.log("⏰🔍 TIME ROUTING: Waiting for location data before redirect...", {
                             hasGeoFencing,
-                            hasLocationRouting, 
+                            hasLocationRouting,
                             hasTimeRouting,
                             hasDeviceRouting,
                             locationDataReady,
@@ -666,7 +670,7 @@ const IdPage = () => {
                     } else if (hasDeviceRouting) {
                         console.log("🔧📍 DEVICE ROUTING: Waiting for location data before redirect...", {
                             hasGeoFencing,
-                            hasLocationRouting, 
+                            hasLocationRouting,
                             hasTimeRouting,
                             hasDeviceRouting,
                             locationDataReady,
@@ -678,7 +682,7 @@ const IdPage = () => {
                     } else {
                         console.log("⏳ Location collection was triggered but location not ready yet. Waiting...", {
                             hasGeoFencing,
-                            hasLocationRouting, 
+                            hasLocationRouting,
                             hasTimeRouting,
                             hasDeviceRouting,
                             locationDataReady,
@@ -689,7 +693,7 @@ const IdPage = () => {
                     }
                     return;
                 }
-                
+
                 // Add debug message when location is ready and proceeding
                 if (locationCollectionTriggered && locationDataReady) {
                     console.log("✅ Location data ready - proceeding with API call and redirect", {
@@ -715,7 +719,7 @@ const IdPage = () => {
 
                 // Lock further runs
                 scanSentRef.current = true;
-                
+
                 // Get the most reliable location data available
                 let effectiveLat = null;
                 let effectiveLng = null;
@@ -807,7 +811,6 @@ const IdPage = () => {
                         effectiveUserLatLng || userLatLng
                     );
                     redirectUrl = dynamicResult.url;
-                    console.log("Dynamic routing result:", dynamicResult);
                 }
 
                 // Fallback to default
@@ -826,17 +829,14 @@ const IdPage = () => {
                         : `https://${redirectUrl}`;
 
                     await api.post(scanUrl, payload);
-                    console.log("Scan details sent successfully");
-                    
-                    // Small delay to ensure loading screen is visible and API call completes
-                    // This gives users time to see the feature image before redirect
+
                     setTimeout(() => {
-                        console.log("Redirecting to:", finalUrl);
                         window.location.replace(finalUrl);
-                    }, 500); // 500ms delay to show the loading screen
+                    }, 500);
                 } else {
-                    setShowDetails(true);
                     setLoading(false);
+                    setShowDetails(true);
+
                 }
             } catch (error) {
                 console.error("Failed to send barcode details or redirect:", error);
@@ -932,22 +932,22 @@ const IdPage = () => {
         );
     }
 
-    if (loading || !showDetails) {
+    if (true) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
                 {loadingImage && (
                     <div style={{ textAlign: 'center' }}>
                         <img src={loadingImage} alt="Loading" style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px' }} />
-                        <div style={{ 
-                            color: '#1976d2', 
-                            fontSize: '18px', 
+                        <div style={{
+                            color: '#1976d2',
+                            fontSize: '18px',
                             fontWeight: 'bold',
                             marginBottom: '10px'
                         }}>
                             Processing QR Code...
                         </div>
-                        <div style={{ 
-                            color: '#666', 
+                        <div style={{
+                            color: '#666',
                             fontSize: '14px',
                             maxWidth: '300px',
                             margin: '0 auto',
