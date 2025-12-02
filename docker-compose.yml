@@ -1,0 +1,9 @@
+services:
+  gs1r:
+    container_name: mresolver
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
