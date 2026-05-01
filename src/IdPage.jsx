@@ -14,10 +14,46 @@ function getDistanceFromLatLonInMeters(lat1, lon1, lat2, lon2) {
     const d = R * c;
     return d;
 }
+
+function getRouteFlags(data) {
+    const arr = data?.jsonData?.data;
+    if (!Array.isArray(arr)) {
+        return {
+            hasLocationType: false,
+            hasGeoFencing: false,
+            hasTimeRouting: false,
+            hasDeviceRouting: false,
+        };
+    }
+    return {
+        hasLocationType: arr.some((item) => item.type === 'Location'),
+        hasGeoFencing: arr.some((item) => item.type === 'Geo-fencing'),
+        hasTimeRouting: arr.some((item) => item.type === 'Time'),
+        hasDeviceRouting: arr.some((item) => item.type === 'Device'),
+    };
+}
+
+/** Reverse geocode in background; never await this on the redirect path. */
+function reverseGeocodeToCity(latitude, longitude) {
+    return fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+        { headers: { Accept: 'application/json' } }
+    )
+        .then((res) => res.json())
+        .then((locData) =>
+            locData.address?.city ||
+            locData.address?.town ||
+            locData.address?.village ||
+            locData.address?.state_district ||
+            locData.address?.state ||
+            ''
+        )
+        .catch(() => '');
+}
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import barcodeIcon from './assets/barcode.svg';
-import api, { sendScanData } from './api';
+import api from './api';
 
 
 import GenerateImage from './assets/images/Generate.png';
@@ -39,7 +75,6 @@ const IdPage = () => {
     const queryString = window.location.search;
     const queryParams = new URLSearchParams(queryString);
     const [currentLocation, setCurrentLocation] = useState(queryParams.get('curlocation') || '');
-    const currentLocationAutoSetRef = useRef(false);
     const [location, setLocation] = useState({ lat: null, lng: null });
     const [deviceType, setDeviceType] = useState("Unknown");
     const [error, setError] = useState(null);
@@ -59,28 +94,103 @@ const IdPage = () => {
     const [displayTitle, setDisplayTitle] = useState('');
     const [loadingImage, setLoadingImage] = useState(null);
 
+    const scanSentRef = useRef(false);
+    const geolocationPromiseRef = useRef(null);
+    const lastGeolocationRef = useRef(null);
+
+    const getGeolocation = (options) => {
+        const defaultOptions = {
+            enableHighAccuracy: false,
+            timeout: isMobile() ? 15000 : 10000,
+            maximumAge: 300000,
+        };
+        const finalOptions = { ...defaultOptions, ...options };
+
+        if (lastGeolocationRef.current && options?.maximumAge !== 0) {
+            return Promise.resolve(lastGeolocationRef.current);
+        }
+        if (geolocationPromiseRef.current) {
+            return geolocationPromiseRef.current;
+        }
+        if (!navigator.geolocation) {
+            return Promise.reject(new Error('Geolocation is not supported by this browser.'));
+        }
+
+        geolocationPromiseRef.current = new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    const coords = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                    };
+                    lastGeolocationRef.current = coords;
+                    resolve(coords);
+                },
+                async (err) => {
+                    if (err && err.code === 1) {
+                        reject(err);
+                        return;
+                    }
+                    const isInsecureOrigin =
+                        err && err.message && /Only secure origins are allowed/i.test(err.message);
+                    if (isInsecureOrigin || (err && err.code === 2)) {
+                        try {
+                            const res = await fetch('https://ipapi.co/json');
+                            if (res.ok) {
+                                const ipJson = await res.json();
+                                const lat = parseFloat(ipJson.latitude ?? ipJson.lat);
+                                const lon = parseFloat(ipJson.longitude ?? ipJson.lon ?? ipJson.longitude);
+                                if (Number.isFinite(lat) && Number.isFinite(lon)) {
+                                    const coords = { lat, lng: lon };
+                                    lastGeolocationRef.current = coords;
+                                    resolve(coords);
+                                    return;
+                                }
+                            }
+                        } catch {
+                            /* ignore */
+                        }
+                    }
+                    reject(err);
+                },
+                finalOptions
+            );
+        }).finally(() => {
+            geolocationPromiseRef.current = null;
+        });
+
+        return geolocationPromiseRef.current;
+    };
+
+    const applyCoordsAndProceed = (coords, opts = {}) => {
+        const { skipReverseGeocode } = opts;
+        const { lat: latitude, lng: longitude } = coords;
+        setShowLocationPrompt(false);
+        setUserLatLng(coords);
+        setLocation({ lat: latitude, lng: longitude });
+        lastGeolocationRef.current = coords;
+
+        if (!queryParams.get('curlocation')) {
+            const provisional = `${latitude},${longitude}`;
+            setCurrentLocation((prev) => (prev && prev.trim() ? prev : provisional));
+            if (!skipReverseGeocode) {
+                reverseGeocodeToCity(latitude, longitude).then((city) => {
+                    if (city) setCurrentLocation(city);
+                });
+            }
+        }
+        setLocationDataReady(true);
+    };
 
     useEffect(() => {
-        if (locationRequired && !locationDataReady) {
+        if (locationRequired && !locationDataReady && showLocationPrompt) {
             const timeout = setTimeout(() => {
-                console.log('⏰ Location data timeout - user did not respond');
                 setLocationDataReady(true);
-                setError('Location permission not given. Some features may not work.');
-            }, 10000);
+                setError((prev) => prev || 'Location not received in time; using default routing.');
+            }, 45000);
             return () => clearTimeout(timeout);
         }
-    }, [locationRequired, locationDataReady]);
-
-    useEffect(() => {
-        if (!locationDataReady && (userLatLng || showLocationPrompt)) {
-            const timeout = setTimeout(() => {
-                console.log('⏰ General location data timeout - proceeding without location');
-                setLocationDataReady(true);
-            }, 15000);
-
-            return () => clearTimeout(timeout);
-        }
-    }, [locationDataReady, userLatLng, showLocationPrompt]);
+    }, [locationRequired, locationDataReady, showLocationPrompt]);
 
 
     const fetchIP = async () => {
@@ -129,235 +239,95 @@ const IdPage = () => {
         if (!sessionStorage.getItem('visited')) {
             sessionStorage.setItem('visited', 'true');
         }
-        const checkAndFetchLocation = async () => {
+    }, []);
+
+    // Single barcode fetch + location bootstrap (no duplicate GETs)
+    useEffect(() => {
+        if (!id) return;
+        let cancelled = false;
+
+        const load = async () => {
+            setInitialDataCheckComplete(false);
+            setLocationDataReady(false);
+            setShowLocationPrompt(false);
+            lastGeolocationRef.current = null;
+            geolocationPromiseRef.current = null;
             try {
                 const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
-                const allData = response.data;
+                if (cancelled) return;
 
-                const hasLocationType = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Location');
-                const hasGeoFencing = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Geo-fencing');
-                const hasTimeRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Time');
-                const hasDeviceRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === 'Device');
+                setUrlData(data);
 
-                if (hasLocationType || hasGeoFencing) {
+                const flags = getRouteFlags(data);
+                const qp = new URLSearchParams(window.location.search);
+                const cityFromQuery = qp.get('curlocation') || '';
+                setCurrentLocation(cityFromQuery);
+                const needsCoordsForGeo = flags.hasGeoFencing;
+                const needsCoordsForLocationRule =
+                    flags.hasLocationType && !cityFromQuery.trim();
+                const mustResolveGeo = needsCoordsForGeo || needsCoordsForLocationRule;
+                const optionalAnalyticsGeo =
+                    (flags.hasTimeRouting || flags.hasDeviceRouting) && !mustResolveGeo;
+
+                if (flags.hasLocationType || flags.hasGeoFencing) {
                     setLocationRequired(true);
-                    console.log('📍 Location-based routing or geo-fencing detected in data');
                 }
 
-                // For time-based and device routing, collect location data for analytics
-                if ((hasTimeRouting || hasDeviceRouting) && !hasLocationType && !hasGeoFencing) {
-                    console.log('⏰🔧 Time-based or Device routing detected - will collect location if available for analytics');
-                }
-
-                if ((hasLocationType || hasGeoFencing || hasTimeRouting || hasDeviceRouting) && (!currentLocation || !userLatLng)) {
-                    if (navigator.geolocation) {
-                        // Check location permission first
-                        if (navigator.permissions) {
-                            navigator.permissions.query({ name: 'geolocation' }).then(function (result) {
-                                console.log('📍 Location permission status:', result.state, 'isMobile:', isMobile());
-                                if (result.state === 'denied') {
-                                    console.log('❌ Location permission denied');
-                                    setShowLocationPrompt(true);
-                                    setError('Location access is required for location-based routing or geo-fencing but permission was denied.');
-                                    return;
-                                } else if (result.state === 'prompt' && isMobile()) {
-                                    console.log('📱 Mobile device needs location permission');
-                                    setShowLocationPrompt(true);
-                                    return;
-                                }
-                            }).catch(err => {
-                                console.log('⚠️ Permission query failed:', err, 'Proceeding with geolocation request');
-                            });
-                        } else if (isMobile()) {
-                            // On mobile, if permissions API is not available, show prompt
-                            console.log('📱 Mobile device without permissions API - showing location prompt');
-                            setShowLocationPrompt(true);
-                            return;
-                        }
-
+                if (!mustResolveGeo) {
+                    setLocationDataReady(true);
+                    if (optionalAnalyticsGeo && navigator.geolocation && !isMobile()) {
                         getGeolocation({
-                            enableHighAccuracy: true,
-                            timeout: isMobile() ? 20000 : 15000, // Longer timeout for mobile
-                            maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile
+                            enableHighAccuracy: false,
+                            timeout: 8000,
+                            maximumAge: 300000,
                         })
-                            .then(async (coords) => {
-                                console.log('✅ Location access granted (cached helper):', coords);
-                                setShowLocationPrompt(false);
-                                const { lat: latitude, lng: longitude } = coords;
-
-                                // Set all location states
-                                setUserLatLng({ lat: latitude, lng: longitude });
-                                setLocation({ lat: latitude, lng: longitude });
-
-                                console.log('📱 Mobile location data set:', {
-                                    userLatLng: { lat: latitude, lng: longitude },
-                                    location: { lat: latitude, lng: longitude },
-                                    isMobile: isMobile()
-                                });
-
-                                if (!currentLocation) {
-                                    try {
-                                        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-                                        const locData = await res.json();
-                                        console.log('🗺️ Full location data from OpenStreetMap API:', locData);
-
-                                        const detectedCity = locData.address.city ||
-                                            locData.address.town ||
-                                            locData.address.village ||
-                                            locData.address.state_district ||
-                                            locData.address.state ||
-                                            '';
-
-                                        if (!currentLocationAutoSetRef.current) {
-                                            setCurrentLocation(detectedCity);
-                                            currentLocationAutoSetRef.current = true;
-                                        }
-                                        setLocationDataReady(true);
-                                        console.log('✅ Location data ready for redirection logic');
-                                    } catch (err) {
-                                        setCurrentLocation(`${latitude},${longitude}`);
-                                        console.log('⚠️ Error getting location name, using coordinates:', `${latitude},${longitude}`);
-                                        setLocationDataReady(true);
-                                    }
-                                } else {
-                                    // Even if we have currentLocation, mark as ready
-                                    setLocationDataReady(true);
-                                }
-                            },
-                                (error) => {
-                                    console.error('🚫 Geolocation error (helper):', error);
-                                    console.log('📍 Location required but access failed (helper)');
-
-                                    // Show location prompt for permission-related errors
-                                    if (error.code === error.PERMISSION_DENIED) {
-                                        setShowLocationPrompt(true);
-                                        setError('Location access is required for location-based routing. Please enable location access and try again.');
-                                    } else if (error.code === error.POSITION_UNAVAILABLE) {
-                                        setShowLocationPrompt(true);
-                                        setError('Unable to determine your location. Please check your location settings.');
-                                    } else if (error.code === error.TIMEOUT) {
-                                        setShowLocationPrompt(true);
-                                        setError('Location request timed out. Please try again.');
-                                    } else {
-                                        setShowLocationPrompt(true);
-                                        setError('Location access failed. Location-based routing requires your location.');
-                                    }
-
-                                    // Set location data as ready even if failed, so redirection can proceed with defaults
-                                    setLocationDataReady(true);
-
-                                    try {
-                                        import('./api').then(({ logErrorToTetr }) => {
-                                            try { logErrorToTetr(error, { source: 'geolocation', id }); } catch (e) { }
-                                        }).catch(() => { });
-                                    } catch (e) { }
-                                },
-                                {
-                                    enableHighAccuracy: true,
-                                    timeout: 15000,
-                                    maximumAge: 60000
-                                }
-                            );
+                            .then((coords) => {
+                                if (cancelled) return;
+                                setUserLatLng(coords);
+                                setLocation(coords);
+                                lastGeolocationRef.current = coords;
+                            })
+                            .catch(() => {});
                     }
+                    return;
+                }
+
+                if (isMobile()) {
+                    setShowLocationPrompt(true);
+                    return;
+                }
+
+                try {
+                    const coords = await getGeolocation({
+                        enableHighAccuracy: false,
+                        timeout: 12000,
+                        maximumAge: 300000,
+                    });
+                    if (cancelled) return;
+                    applyCoordsAndProceed(coords);
+                } catch (error) {
+                    if (cancelled) return;
+                    setShowLocationPrompt(true);
+                    setError(
+                        error?.code === 1
+                            ? 'Location access was denied. Allow location or continue without it.'
+                            : 'Could not read location. Allow access or continue without it.'
+                    );
                 }
             } catch (error) {
                 console.error('Error fetching barcode details:', error);
+                if (!cancelled) setLoading(false);
             } finally {
-                setInitialDataCheckComplete(true);
+                if (!cancelled) setInitialDataCheckComplete(true);
             }
         };
-        checkAndFetchLocation();
-    }, []);
 
-    // Guard ref to ensure the scan/redirection flow runs only once
-    const scanSentRef = useRef(false);
-    // Geolocation caching to avoid multiple prompts / duplicate requests
-    const geolocationPromiseRef = useRef(null);
-    const lastGeolocationRef = useRef(null);
-
-    const getGeolocation = (options) => {
-        // Default options with mobile-specific adjustments
-        const defaultOptions = {
-            enableHighAccuracy: true,
-            timeout: isMobile() ? 25000 : 15000, // Longer timeout for mobile
-            maximumAge: isMobile() ? 300000 : 60000 // Longer cache for mobile (5 min vs 1 min)
+        load();
+        return () => {
+            cancelled = true;
         };
-        const finalOptions = { ...defaultOptions, ...options };
-
-        console.log('🔍 Geolocation options:', finalOptions, 'isMobile:', isMobile());
-
-        if (lastGeolocationRef.current) {
-            console.log('📍 Using cached location:', lastGeolocationRef.current);
-            return Promise.resolve(lastGeolocationRef.current);
-        }
-        if (geolocationPromiseRef.current) {
-            console.log('⏳ Geolocation request already in progress');
-            return geolocationPromiseRef.current;
-        }
-        if (!navigator.geolocation) {
-            return Promise.reject(new Error('Geolocation is not supported by this browser.'));
-        }
-
-        geolocationPromiseRef.current = new Promise((resolve, reject) => {
-            console.log('🌍 Starting geolocation request with options:', finalOptions);
-
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const coords = { lat: position.coords.latitude, lng: position.coords.longitude };
-                    lastGeolocationRef.current = coords;
-                    console.log('✅ Geolocation success:', coords, 'Accuracy:', position.coords.accuracy, 'meters');
-                    resolve(coords);
-                },
-                async (err) => {
-                    console.error('❌ Browser geolocation failed:', {
-                        message: err && err.message,
-                        code: err && err.code,
-                        isMobile: isMobile(),
-                        userAgent: navigator.userAgent
-                    });
-
-                    // If permission was explicitly denied, do not attempt IP fallback.
-                    if (err && err.code === 1) {
-                        console.log('🚫 Permission denied - no fallback');
-                        reject(err);
-                        return;
-                    }
-
-                    // If the failure is due to insecure origin, try IP-based fallback (approximate).
-                    const isInsecureOrigin = err && err.message && /Only secure origins are allowed/i.test(err.message);
-                    if (isInsecureOrigin || (err && err.code === 2)) { // POSITION_UNAVAILABLE
-                        try {
-                            console.log('🔄 Attempting IP-based geolocation fallback (approximate).');
-                            const res = await fetch('https://ipapi.co/json');
-                            if (res.ok) {
-                                const ipJson = await res.json();
-                                const lat = parseFloat(ipJson.latitude ?? ipJson.lat);
-                                const lon = parseFloat(ipJson.longitude ?? ipJson.lon ?? ipJson.longitude);
-                                if (Number.isFinite(lat) && Number.isFinite(lon)) {
-                                    const coords = { lat, lng: lon };
-                                    lastGeolocationRef.current = coords;
-                                    console.log('✅ IP-based geolocation success:', coords);
-                                    resolve(coords);
-                                    return;
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('❌ IP-based geolocation fallback failed:', e);
-                            // fallthrough to reject below
-                        }
-                    }
-
-                    reject(err);
-                },
-                finalOptions
-            );
-        }).finally(() => {
-            geolocationPromiseRef.current = null;
-        });
-
-        return geolocationPromiseRef.current;
-    };
+    }, [id]);
 
     // Reset scan guard when `id` changes so new barcode IDs can trigger the flow again
     useEffect(() => {
@@ -365,58 +335,24 @@ const IdPage = () => {
     }, [id]);
 
     const requestLocationPermission = async () => {
-        setShowLocationPrompt(false);
         setError(null);
 
         try {
-            console.log('📱 Requesting location permission on mobile:', isMobile());
             const coords = await getGeolocation({
-                enableHighAccuracy: true,
-                timeout: isMobile() ? 30000 : 15000, // Even longer timeout for explicit permission request
-                maximumAge: 0 // Don't use cached location for explicit requests
+                enableHighAccuracy: false,
+                timeout: isMobile() ? 20000 : 12000,
+                maximumAge: 0,
             });
-
-            console.log('✅ Location permission granted:', coords);
-
-            // Set all location states explicitly
-            setUserLatLng(coords);
-            setLocation(coords);
-
-            // Store in lastGeolocationRef to ensure it's available for API calls
-            lastGeolocationRef.current = coords;
-
-            console.log('📍 All location data set:', {
-                userLatLng: coords,
-                location: coords,
-                lastGeolocationRef: lastGeolocationRef.current,
-                isMobile: isMobile()
-            });
-
-            // Optionally get city name
-            try {
-                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}`);
-                const locData = await res.json();
-                const detectedCity = locData.address.city ||
-                    locData.address.town ||
-                    locData.address.village ||
-                    coords.lat + ',' + coords.lng;
-                setCurrentLocation(detectedCity);
-                console.log('🗺️ Location name resolved:', detectedCity);
-            } catch {
-                setCurrentLocation(`${coords.lat},${coords.lng}`);
-                console.log('⚠️ Using coordinates as location name');
-            }
-
-            // Mark location data as ready AFTER everything is set
-            setLocationDataReady(true);
-            console.log('✅ Location data ready - proceeding with redirection logic');
-
+            applyCoordsAndProceed(coords);
         } catch (error) {
-            console.error("❌ User denied location or location failed:", error);
-            // Even if location is denied, mark as ready so app can proceed without location
+            console.error('User denied location or location failed:', error);
             setLocationDataReady(true);
             setShowLocationPrompt(true);
-            setError('Location access is required for location-based routing. Please enable location to continue.');
+            setError(
+                error?.code === 1
+                    ? 'Location was blocked. Enable it in browser settings or continue without location.'
+                    : 'Could not read location. Try again or continue without location.'
+            );
         }
     };
 
@@ -535,54 +471,7 @@ const IdPage = () => {
 
     useEffect(() => {
         setMobile(isMobile());
-        if (sessionExpired) return;
-        if (!id) return;
-
-        const fetchUrlData = async () => {
-            try {
-                // Call the barcode API
-                const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
-                const data = response.data;
-                setUrlData(data);
-                console.log(data, "Data");
-
-                // Device detection
-                const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-                let deviceType = '';
-
-                if (/android/i.test(userAgent)) {
-                    deviceType = 'Android';
-                } else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
-                    deviceType = 'iPhone';
-                } else {
-                    deviceType = 'Desktop';
-                }
-
-                let redirectUrl = '';
-                if (data.jsonData && Array.isArray(data.jsonData.data)) {
-                    const deviceObj = data.jsonData.data.find(
-                        item => item.type === 'Device' && item.details &&
-                            (item.details.deviceType === deviceType || item.details.device === deviceType)
-                    );
-                    if (deviceObj && deviceObj.details && deviceObj.details.url) {
-                        redirectUrl = deviceObj.details.url;
-                        console.log('🔧 Early device detection found URL:', {
-                            deviceType,
-                            deviceUrl: redirectUrl,
-                            deviceDetails: deviceObj.details
-                        });
-                    }
-                }
-                if (!redirectUrl) {
-                    redirectUrl = data.jsonData?.defaultURL || data.jsonData?.defaultUrl || data.defaultURL || data.defaultUrl || '';
-                }
-            } catch (error) {
-                console.error('Error fetching URL data:', error);
-                setLoading(false);
-            }
-        };
-        fetchUrlData();
-    }, [id, sessionExpired]);
+    }, []);
 
     useEffect(() => {
         const images = [
@@ -599,161 +488,56 @@ const IdPage = () => {
 
     useEffect(() => {
         const fetchAndSendBarcodeDetails = async () => {
-
-            console.log("fetchAndSendBarcodeDetails called", {
-                id,
-                scanSent: scanSentRef.current,
-                locationDataReady,
-                userLatLng,
-                currentLocation,
-                locationRequired
-            });
-
-            // Prevent duplicate calls
-            if (scanSentRef.current) return;
-
-            // Wait for initial data check to complete
-            if (!initialDataCheckComplete) {
-                console.log("⏳ Waiting for initial data check to complete...");
+            if (
+                !id ||
+                scanSentRef.current ||
+                !initialDataCheckComplete ||
+                !urlData ||
+                !locationDataReady
+            ) {
                 return;
             }
 
+            const data = urlData;
+
             try {
-                const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
-                const data = response.data;
-                const hasLocationRouting =
-                    Array.isArray(data?.jsonData?.data) &&
-                    data.jsonData.data.some(item => item.type === "Location");
-
-                const hasGeoFencing =
-                    Array.isArray(data?.jsonData?.data) &&
-                    data.jsonData.data.some(item => item.type === "Geo-fencing");
-
-                const hasTimeRouting =
-                    Array.isArray(data?.jsonData?.data) &&
-                    data.jsonData.data.some(item => item.type === "Time");
-
-                const hasDeviceRouting = Array.isArray(data?.jsonData?.data) && data.jsonData.data.some(item => item.type === "Device");
-
-                const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting || hasDeviceRouting;
-                const isDeviceOnlyRouting = hasDeviceRouting && !hasLocationRouting && !hasGeoFencing && !hasTimeRouting;
-                if (!locationCollectionTriggered && !locationDataReady) {
-                    console.log("📍 No location-based routing detected - proceeding without location wait");
-                    setLocationDataReady(true);
+                let ipAddress = ip || null;
+                if (!ipAddress) {
+                    ipAddress = await fetch('https://api.ipify.org?format=json')
+                        .then((res) => res.json())
+                        .then((json) => json.ip)
+                        .catch(() => null);
                 }
-                if (isDeviceOnlyRouting) {
-                    console.log("🔧 Device-only routing detected - proceeding without location wait");
-                    setLocationDataReady(true);
-
-                } else {
-                    const locationCollectionTriggered = hasGeoFencing || hasLocationRouting || hasTimeRouting || hasDeviceRouting;
-                    if (locationCollectionTriggered && !locationDataReady) {
-                        console.log("⏳ Waiting for location data...");
-                        return;
-                    }
-                }
-
-
-                if (locationCollectionTriggered && !locationDataReady) {
-                    if (hasTimeRouting) {
-                        console.log("⏰🔍 TIME ROUTING: Waiting for location data before redirect...", {
-                            hasGeoFencing,
-                            hasLocationRouting,
-                            hasTimeRouting,
-                            hasDeviceRouting,
-                            locationDataReady,
-                            userLatLng: !!userLatLng,
-                            lastGeolocation: !!lastGeolocationRef.current,
-                            currentLocation,
-                            locationRequired
-                        });
-                    } else if (hasDeviceRouting) {
-                        console.log("🔧📍 DEVICE ROUTING: Waiting for location data before redirect...", {
-                            hasGeoFencing,
-                            hasLocationRouting,
-                            hasTimeRouting,
-                            hasDeviceRouting,
-                            locationDataReady,
-                            userLatLng: !!userLatLng,
-                            lastGeolocation: !!lastGeolocationRef.current,
-                            currentLocation,
-                            deviceType
-                        });
-                    } else {
-                        console.log("⏳ Location collection was triggered but location not ready yet. Waiting...", {
-                            hasGeoFencing,
-                            hasLocationRouting,
-                            hasTimeRouting,
-                            hasDeviceRouting,
-                            locationDataReady,
-                            userLatLng: !!userLatLng,
-                            lastGeolocation: !!lastGeolocationRef.current,
-                            currentLocation
-                        });
-                    }
-                    return;
-                }
-
-                // Add debug message when location is ready and proceeding
-                if (locationCollectionTriggered && locationDataReady) {
-                    console.log("✅ Location data ready - proceeding with API call and redirect", {
-                        hasTimeRouting,
-                        hasGeoFencing,
-                        hasLocationRouting,
-                        hasDeviceRouting,
-                        userLatLng: !!userLatLng,
-                        lastGeolocation: !!lastGeolocationRef.current
-                    });
-                }
-
-                const ipAddress = await fetch("https://api.ipify.org?format=json")
-                    .then(res => res.json())
-                    .then(json => json.ip)
-                    .catch(() => null);
 
                 const userAgent = navigator.userAgent || navigator.vendor || window.opera;
-                let deviceType = "";
-                if (/android/i.test(userAgent)) deviceType = "Android";
-                else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) deviceType = "iPhone";
-                else deviceType = "Desktop";
+                let resolvedDeviceType = '';
+                if (/android/i.test(userAgent)) resolvedDeviceType = 'Android';
+                else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+                    resolvedDeviceType = 'iPhone';
+                } else resolvedDeviceType = 'Desktop';
 
-                // Lock further runs
                 scanSentRef.current = true;
 
-                // Get the most reliable location data available
                 let effectiveLat = null;
                 let effectiveLng = null;
                 let effectiveUserLatLng = null;
 
-                // Priority: userLatLng > lastGeolocationRef > currentLocation coordinates
-                if (userLatLng?.lat && userLatLng?.lng) {
+                if (userLatLng?.lat != null && userLatLng?.lng != null) {
                     effectiveLat = userLatLng.lat;
                     effectiveLng = userLatLng.lng;
                     effectiveUserLatLng = userLatLng;
-                } else if (lastGeolocationRef.current?.lat && lastGeolocationRef.current?.lng) {
+                } else if (
+                    lastGeolocationRef.current?.lat != null &&
+                    lastGeolocationRef.current?.lng != null
+                ) {
                     effectiveLat = lastGeolocationRef.current.lat;
                     effectiveLng = lastGeolocationRef.current.lng;
                     effectiveUserLatLng = lastGeolocationRef.current;
-                } else if (location?.lat && location?.lng) {
+                } else if (location?.lat != null && location?.lng != null) {
                     effectiveLat = location.lat;
                     effectiveLng = location.lng;
                     effectiveUserLatLng = location;
                 }
-
-                console.log("📊 Location data for API:", {
-                    effectiveLat,
-                    effectiveLng,
-                    effectiveUserLatLng,
-                    userLatLng,
-                    locationState: location,
-                    lastGeolocation: lastGeolocationRef.current,
-                    hasTimeRouting,
-                    hasLocationRouting,
-                    hasGeoFencing,
-                    isMobile: isMobile(),
-                    locationDataReady,
-                    currentLocation
-                });
 
                 const barcodeDetails = data?.jsonData?.data || {};
                 const payload = {
@@ -766,44 +550,28 @@ const IdPage = () => {
                     userLatLng: effectiveUserLatLng,
                     latitude: effectiveLat,
                     longitude: effectiveLng,
-                    deviceType: deviceType,
-                    ipAddress: ipAddress || null,
+                    deviceType: resolvedDeviceType,
+                    ipAddress,
                 };
-
-                console.log("📤 Prepared payload for API:", payload);
-                console.log("📍 Final location data being sent:", {
-                    latitude: payload.latitude,
-                    longitude: payload.longitude,
-                    userLatLng: payload.userLatLng,
-                    hasLocationData: !!(payload.latitude && payload.longitude),
-                    deviceType: payload.deviceType,
-                    ipAddress: payload.ipAddress
-                });
 
                 setLoading(true);
 
-                const scanUrl = "https://tandt.api.sakksh.com/genbarcode/scan";
+                const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
 
-                let redirectUrl = "";
+                let redirectUrl = '';
 
-                // Check for device-specific rule
                 if (data.jsonData && Array.isArray(data.jsonData.data)) {
                     const deviceObj = data.jsonData.data.find(
-                        item =>
-                            item.type === "Device" &&
-                            (item.details?.deviceType === deviceType || item.details?.device === deviceType)
+                        (item) =>
+                            item.type === 'Device' &&
+                            (item.details?.deviceType === resolvedDeviceType ||
+                                item.details?.device === resolvedDeviceType)
                     );
                     if (deviceObj?.details?.url) {
                         redirectUrl = deviceObj.details.url;
-                        console.log("🔧 Device-specific URL found:", {
-                            deviceType,
-                            deviceUrl: redirectUrl,
-                            deviceDetails: deviceObj.details
-                        });
                     }
                 }
 
-                // If no device URL → check dynamic routing
                 if (!redirectUrl) {
                     const dynamicResult = await findMatchingUrlAndTitle(
                         data.jsonData,
@@ -813,44 +581,46 @@ const IdPage = () => {
                     redirectUrl = dynamicResult.url;
                 }
 
-                // Fallback to default
                 if (!redirectUrl) {
                     redirectUrl =
                         data.jsonData?.defaultURL ||
                         data.jsonData?.defaultUrl ||
                         data.defaultURL ||
                         data.defaultUrl ||
-                        "";
+                        '';
                 }
 
                 if (redirectUrl) {
-                    const finalUrl = redirectUrl.startsWith("http")
+                    const finalUrl = redirectUrl.startsWith('http')
                         ? redirectUrl
                         : `https://${redirectUrl}`;
 
                     await api.post(scanUrl, payload);
-
-                    setTimeout(() => {
-                        window.location.replace(finalUrl);
-                    }, 500);
+                    window.location.replace(finalUrl);
                 } else {
+                    scanSentRef.current = false;
                     setLoading(false);
                     setShowDetails(true);
-
                 }
             } catch (error) {
-                console.error("Failed to send barcode details or redirect:", error);
+                console.error('Failed to send barcode details or redirect:', error);
+                scanSentRef.current = false;
                 setShowDetails(true);
                 setLoading(false);
             }
         };
 
-        if (id) {
-            fetchAndSendBarcodeDetails();
-        }
-        console.log("RENDER L");
-
-    }, [id, locationDataReady, initialDataCheckComplete]);
+        fetchAndSendBarcodeDetails();
+    }, [
+        id,
+        urlData,
+        locationDataReady,
+        initialDataCheckComplete,
+        userLatLng,
+        currentLocation,
+        location,
+        ip,
+    ]);
 
 
     if (sessionExpired) {
