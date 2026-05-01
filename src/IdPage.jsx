@@ -198,17 +198,6 @@ const IdPage = () => {
         setLocationDataReady(true);
     };
 
-    useEffect(() => {
-        if (locationRequired && !locationDataReady && showLocationPrompt) {
-            const timeout = setTimeout(() => {
-                setLocationDataReady(true);
-                setError((prev) => prev || 'Location not received in time; using default routing.');
-            }, 45000);
-            return () => clearTimeout(timeout);
-        }
-    }, [locationRequired, locationDataReady, showLocationPrompt]);
-
-
     const fetchIP = async () => {
         try {
             const response = await fetch("https://api.ipify.org?format=json");
@@ -310,6 +299,24 @@ const IdPage = () => {
                 }
 
                 if (isMobile()) {
+                    try {
+                        if (navigator.permissions?.query) {
+                            const perm = await navigator.permissions.query({
+                                name: 'geolocation',
+                            });
+                            if (perm.state === 'granted') {
+                                const coords = await getGeolocation({
+                                    enableHighAccuracy: false,
+                                    timeout: 20000,
+                                    maximumAge: 300000,
+                                });
+                                if (!cancelled) applyCoordsAndProceed(coords);
+                                return;
+                            }
+                        }
+                    } catch {
+                        /* Permissions API missing or unsupported for geolocation */
+                    }
                     setShowLocationPrompt(true);
                     return;
                 }
@@ -684,7 +691,7 @@ const IdPage = () => {
                         </div>
                     )}
                     <p style={{ color: '#666', fontSize: '14px', marginBottom: '2rem' }}>
-                        Please allow location access to continue, or the default content will be shown.
+                        Tap Allow to use your location for routing. Waiting without choosing an option will not redirect — use Continue Without Location only if you want the default link.
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
