@@ -33,6 +33,22 @@ function getRouteFlags(data) {
     };
 }
 
+/** Detect redirects that would reload this SPA route (infinite loop). */
+function wouldNavigateToSameDocument(targetHref) {
+    try {
+        const resolved = new URL(targetHref, window.location.href).href;
+        const norm = (s) => {
+            const u = new URL(s);
+            let path = u.pathname;
+            if (path.length > 1 && path.endsWith('/')) path = path.slice(0, -1);
+            return `${u.origin.toLowerCase()}${path}${u.search}`;
+        };
+        return norm(window.location.href) === norm(resolved);
+    } catch {
+        return false;
+    }
+}
+
 /** Reverse geocode in background; never await this on the redirect path. */
 function reverseGeocodeToCity(latitude, longitude) {
     return fetch(
@@ -253,7 +269,7 @@ const IdPage = () => {
             lastGeolocationRef.current = null;
             geolocationPromiseRef.current = null;
             try {
-                const response = await api.get(`https://tandt.api.sakksh.com/genbarcode/${id}`);
+                const response = await api.get(`https://api.tnt.sakksh.com/genbarcode/${id}`);
                 const data = response.data;
                 if (cancelled) return;
 
@@ -498,6 +514,8 @@ const IdPage = () => {
                 return;
             }
 
+            scanSentRef.current = true;
+
             const data = urlData;
 
             try {
@@ -515,8 +533,6 @@ const IdPage = () => {
                 else if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
                     resolvedDeviceType = 'iPhone';
                 } else resolvedDeviceType = 'Desktop';
-
-                scanSentRef.current = true;
 
                 let effectiveLat = null;
                 let effectiveLng = null;
@@ -556,7 +572,7 @@ const IdPage = () => {
 
                 setLoading(true);
 
-                const scanUrl = 'https://tandt.api.sakksh.com/genbarcode/scan';
+                const scanUrl = 'https://api.tnt.sakksh.com/genbarcode/scan';
 
                 let redirectUrl = '';
 
@@ -596,6 +612,15 @@ const IdPage = () => {
                         : `https://${redirectUrl}`;
 
                     await api.post(scanUrl, payload);
+
+                    if (wouldNavigateToSameDocument(finalUrl)) {
+                        setDisplayTitle('This barcode resolves to this page');
+                        setDisplayUrl(finalUrl);
+                        setLoading(false);
+                        setShowDetails(true);
+                        return;
+                    }
+
                     window.location.replace(finalUrl);
                 } else {
                     scanSentRef.current = false;
@@ -702,7 +727,7 @@ const IdPage = () => {
         );
     }
 
-    if (true) {
+    if (loading && !showDetails) {
         return (
             <div style={mobile ? mobileStyles.loadingContainer : desktopStyles.loadingContainer}>
                 {loadingImage && (
